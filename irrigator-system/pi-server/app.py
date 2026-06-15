@@ -8,7 +8,9 @@ Access at: http://192.168.5.111:5000
 import json
 import datetime
 from flask import Flask, jsonify, request, render_template, abort
-from database import get_conn, init_db, get_setting, set_setting, create_session
+from database import (get_conn, init_db, get_setting, set_setting,
+                       create_session, get_active_session_id,
+                       get_or_create_today_session)
 from spread_calc import calculate_spread
 
 app = Flask(__name__)
@@ -95,6 +97,42 @@ def session_positions(sid):
     return jsonify(rows_to_list(rows))
 
 
+@app.get('/api/sessions/all-spreads')
+def all_spreads():
+    """
+    Returns spread polygon + stats for every session that has enough GPS data.
+    Used by the map to display all historical sessions simultaneously.
+    """
+    conn     = get_conn()
+    sessions = conn.execute('SELECT * FROM sessions ORDER BY start_time ASC').fetchall()
+    results  = []
+
+    for session in sessions:
+        rows = conn.execute(
+            'SELECT lat, lon, timestamp FROM positions '
+            'WHERE session_id=? AND pump_on=1 ORDER BY timestamp',
+            (session['id'],)
+        ).fetchall()
+
+        if len(rows) < 2:
+            continue
+
+        result = calculate_spread(
+            [dict(r) for r in rows],
+            spread_width_m = session['spread_width_m'],
+            flow_rate_lpm  = session['flow_rate_lpm']
+        )
+        if result:
+            results.append({
+                'session': dict(session),
+                'geojson': result['geojson'],
+                'stats':   result['stats'],
+            })
+
+    conn.close()
+    return jsonify(results)
+
+
 @app.get('/api/live')
 def live_position():
     """Latest GPS fix from the irrigator (device_id=2)."""
@@ -149,10 +187,7 @@ def ingest():
         return jsonify({'ok': True, 'session_id': session_id})
 
     if msg_type == MSG_ON:
-        session_id = get_active_session_id()
-        if session_id is None:
-            import database as _db
-            session_id = _db.create_session(f"Run {datetime.date.today().isoformat()}")
+        session_id = get_or_create_today_session()
         return jsonify({'ok': True, 'session_id': session_id})
 
     if msg_type == MSG_OFF:

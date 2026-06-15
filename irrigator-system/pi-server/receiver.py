@@ -14,7 +14,8 @@ import time
 import datetime
 import requests
 import serial
-from database import get_conn, init_db, get_setting, get_active_session_id, create_session
+from database import (get_conn, init_db, get_setting,
+                       get_active_session_id, get_or_create_today_session)
 
 SERIAL_PORT  = '/dev/ttyUSB0'
 BAUD_RATE    = 115200
@@ -72,11 +73,7 @@ def handle_gps(pkt):
 
 
 def handle_pump_on():
-    session_id = get_active_session_id()
-    if session_id is None:
-        date_str  = datetime.date.today().isoformat()
-        session_id = create_session(f"Run {date_str}")
-        print(f"[SESSION] Auto-created session {session_id}")
+    session_id = get_or_create_today_session()
     print(f"[PUMP] ON — session {session_id}")
 
 

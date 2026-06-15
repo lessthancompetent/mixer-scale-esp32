@@ -91,6 +91,46 @@ def get_active_session_id():
     return row['id'] if row else None
 
 
+def get_or_create_today_session():
+    """
+    Returns the session ID for today, creating one if needed.
+    Automatically closes any open sessions from previous days.
+    Called on PUMP_ON events so each calendar day gets its own session.
+    """
+    import datetime
+    today     = datetime.date.today().isoformat()
+    now_iso   = datetime.datetime.utcnow().isoformat()
+    conn      = get_conn()
+
+    # Close stale sessions that started before today and were never closed
+    conn.execute(
+        "UPDATE sessions SET end_time=? WHERE end_time IS NULL AND date(start_time) < ?",
+        (now_iso, today)
+    )
+    conn.commit()
+
+    # Return today's session if one already exists
+    row = conn.execute(
+        "SELECT id FROM sessions WHERE date(start_time)=? ORDER BY start_time DESC LIMIT 1",
+        (today,)
+    ).fetchone()
+    if row:
+        conn.close()
+        return row['id']
+
+    # Create a new named session for today
+    sw = float(get_setting('spread_width_m', 30.0))
+    fr = float(get_setting('flow_rate_lpm',  833.0))
+    cur = conn.execute(
+        'INSERT INTO sessions (name, start_time, spread_width_m, flow_rate_lpm) VALUES (?,?,?,?)',
+        (f"Run {today}", now_iso, sw, fr)
+    )
+    conn.commit()
+    sid = cur.lastrowid
+    conn.close()
+    return sid
+
+
 def create_session(name, spread_width_m=None, flow_rate_lpm=None):
     import datetime
     if spread_width_m is None:

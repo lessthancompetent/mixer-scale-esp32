@@ -247,6 +247,12 @@
     .irr-btn-gray  { background:#333;color:#ccc; }
     .irr-btn-red   { background:#c62828;color:#fff; }
     .irr-hidden { display:none!important; }
+    #irr-toast {
+      position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+      background:#b91c1c;color:#fff;padding:10px 20px;border-radius:8px;
+      font-size:0.85rem;z-index:10000;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;
+    }
+    #irr-toast.irr-toast-show { opacity:1;transform:translateX(-50%) translateY(0); }
 
     /* Leaflet overrides for dark theme */
     .leaflet-container { background:#222; }
@@ -495,6 +501,8 @@
 
   </main>
 </div>
+
+<div id="irr-toast"></div>
 
 <!-- Irrigator new-session modal -->
 <div id="irr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
@@ -1024,28 +1032,47 @@ document.getElementById('password').addEventListener('keydown',e=>{
 // proxies to the Flask irrigator backend on port 5000.
 // ──────────────────────────────────────────────────────────────────────
 const IRR = '/irrigator-api';
+const SESSION_COLORS = [
+  '#4caf50','#2196f3','#ff9800','#e91e63',
+  '#9c27b0','#00bcd4','#ff5722','#8bc34a'
+];
 let irrReady=false, irrMap=null, irrLiveMarker=null;
 let irrTrackLayer=null, irrSpreadLayer=null, irrAlertLayer=null;
+let irrAllSpreadsLayer=null;
 let irrActiveSession=null;
 let irrLivePoll=null, irrAlertPoll=null;
+let irrSessionColorMap={};
+
+// ── Toast ─────────────────────────────────────────────────────────────
+let irrToastTimer=null;
+function irrShowToast(msg, isError=true){
+  const t=document.getElementById('irr-toast');
+  t.textContent=msg;
+  t.style.background=isError?'#b91c1c':'#166534';
+  t.classList.add('irr-toast-show');
+  clearTimeout(irrToastTimer);
+  irrToastTimer=setTimeout(()=>t.classList.remove('irr-toast-show'),4000);
+}
 
 function irrInit(){
   if (irrReady){ irrMap && irrMap.invalidateSize(); return; }
 
-  // Lazy-load Leaflet
   function _setup(){
     irrReady=true;
     irrMap=L.map('irr-map',{zoomControl:true}).setView([-43.5,172.6],14);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       {attribution:'Tiles © Esri',maxZoom:20}).addTo(irrMap);
+    irrAllSpreadsLayer = L.layerGroup().addTo(irrMap);
     irrTrackLayer  = L.layerGroup().addTo(irrMap);
     irrSpreadLayer = L.layerGroup().addTo(irrMap);
     irrAlertLayer  = L.layerGroup().addTo(irrMap);
     irrLoadSessions();
+    irrLoadAllSpreads();
     irrPollLive();
     irrPollAlerts();
     irrLivePoll  = setInterval(irrPollLive,  15000);
     irrAlertPoll = setInterval(irrPollAlerts, 30000);
+    setInterval(irrLoadAllSpreads, 60000);
     setInterval(()=>{ if(irrActiveSession) irrLoadSessionData(irrActiveSession); }, 60000);
   }
 
@@ -1084,6 +1111,30 @@ async function irrPollLive(){
   }
 }
 
+// ── All sessions spread polygons ─────────────────────────────────────
+async function irrLoadAllSpreads(){
+  const results=await irrApi('/sessions/all-spreads');
+  if(!results||!irrAllSpreadsLayer) return;
+  irrAllSpreadsLayer.clearLayers();
+  irrSessionColorMap={};
+  results.forEach((item,i)=>{
+    const color=SESSION_COLORS[i%SESSION_COLORS.length];
+    const sid=item.session.id;
+    irrSessionColorMap[sid]=color;
+    const isActive=sid===irrActiveSession;
+    L.geoJSON(item.geojson,{
+      filter:f=>f.properties.type==='spread',
+      style:{
+        color:color, fillColor:color,
+        fillOpacity:isActive?0.55:0.25,
+        weight:isActive?2:1, opacity:isActive?1:0.6,
+      },
+    }).bindTooltip(`<b>${item.session.name||'Session '+sid}</b><br>`
+        +`${item.stats.area_ha} ha &middot; ${(item.stats.volume_l/1000).toFixed(1)} m³`)
+    .addTo(irrAllSpreadsLayer);
+  });
+}
+
 // ── Sessions ─────────────────────────────────────────────────────────
 async function irrLoadSessions(){
   const list=await irrApi('/sessions');
@@ -1103,6 +1154,7 @@ document.getElementById('irr-session-sel').addEventListener('change',e=>{
   irrClearLayers();
   irrActiveSession=id||null;
   document.getElementById('irr-spread-card').classList.toggle('irr-hidden',!id);
+  irrLoadAllSpreads();
   if(id) irrLoadSessionData(id);
 });
 
@@ -1126,14 +1178,13 @@ function irrClearLayers(){
 function irrRenderTrack(pts){
   const lls=pts.map(p=>[p.lat,p.lon]);
   const poly=L.polyline(lls,{color:'#fff',weight:2,opacity:.7,dashArray:'6 4'}).addTo(irrTrackLayer);
-  // Direction arrows
   const step=Math.max(1,Math.floor(pts.length/20));
   for(let i=step;i<pts.length;i+=step){
     const a=pts[i-step],b=pts[i];
     const ang=irrBearing([a.lat,a.lon],[b.lat,b.lon]);
     const mid=[(a.lat+b.lat)/2,(a.lon+b.lon)/2];
     L.marker(mid,{
-      icon:L.divIcon({html:`<div style="transform:rotate(${ang}deg);color:#fff;font-size:13px;line-height:1">▲</div>`,iconSize:[13,13],className:''}),
+      icon:L.divIcon({html:`<div style="transform:rotate(${ang}deg);color:#fff;font-size:13px;line-height:1">&#9650;</div>`,iconSize:[13,13],className:''}),
       interactive:false
     }).addTo(irrTrackLayer);
   }
@@ -1147,11 +1198,12 @@ function irrBearing(from,to){
   return((Math.atan2(y,x)*180/Math.PI)+360)%360;
 }
 
-// ── Spread polygon ────────────────────────────────────────────────────
+// ── Spread polygon (selected session highlight) ───────────────────────
 function irrRenderSpread(gj,stats){
+  const color=irrSessionColorMap[irrActiveSession]||'#4caf50';
   L.geoJSON(gj,{
     filter:f=>f.properties.type==='spread',
-    style:{color:'#2e7d32',fillColor:'#4caf50',fillOpacity:.35,weight:1.5},
+    style:{color:color,fillColor:color,fillOpacity:.5,weight:2},
   }).bindTooltip(f=>{
     const p=f.properties;
     return `Area: ${p.area_ha} ha<br>Volume: ${(p.volume_l/1000).toFixed(1)} m³<br>`
@@ -1189,7 +1241,7 @@ async function irrPollAlerts(){
     }
     const loc=(a.lat&&a.lon)?`${a.lat.toFixed(5)}, ${a.lon.toFixed(5)}`:'Location unknown';
     const div=document.createElement('div'); div.className='irr-alert-item';
-    div.innerHTML=`<div class="irr-alert-loc">⚠ IRRIGATOR STALLED</div>
+    div.innerHTML=`<div class="irr-alert-loc">&#9888; IRRIGATOR STALLED</div>
       <div class="irr-alert-time">${(a.timestamp||'').slice(0,16).replace('T',' ')} UTC</div>
       <div style="font-size:0.7rem;color:var(--muted)">${loc}</div>
       <button class="irr-btn irr-btn-gray" style="margin-top:4px;font-size:0.72rem;padding:2px 8px" onclick="irrAck(${a.id})">Acknowledge</button>`;
@@ -1210,7 +1262,13 @@ async function irrCreateSession(){
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name,spread_width_m:width,flow_rate_lpm:flow})
   });
-  if(ok){ document.getElementById('irr-modal').style.display='none'; irrLoadSessions(); }
+  if(ok){
+    document.getElementById('irr-modal').style.display='none';
+    irrLoadSessions();
+    irrLoadAllSpreads();
+  } else {
+    irrShowToast('Could not create session — is the irrigator server running?');
+  }
 }
 document.getElementById('irr-btn-end').addEventListener('click',async()=>{
   if(!irrActiveSession) return;
@@ -1225,9 +1283,16 @@ document.getElementById('irr-btn-end').addEventListener('click',async()=>{
 async function irrApi(path,opts={}){
   try{
     const r=await fetch(IRR+path,{credentials:'include',...opts});
+    if(r.status===502){
+      irrShowToast('Irrigator server unavailable — start app.py on the Pi');
+      return null;
+    }
     if(!r.ok) return null;
     return r.json();
-  }catch(e){ return null; }
+  }catch(e){
+    irrShowToast('Could not reach irrigator server');
+    return null;
+  }
 }
 </script>
 </body>
