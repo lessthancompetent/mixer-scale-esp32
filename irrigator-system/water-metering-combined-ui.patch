@@ -1,0 +1,437 @@
+diff --git a/server/package.json b/server/package.json
+index 22a2573..362aed7 100644
+--- a/server/package.json
++++ b/server/package.json
+@@ -17,7 +17,8 @@
+     "jsonwebtoken": "^9.0.2",
+     "mqtt": "^5.3.4",
+     "node-schedule": "^2.1.1",
+-    "nodemailer": "^6.9.9"
++    "nodemailer": "^6.9.9",
++    "http-proxy-middleware": "^3.0.0"
+   },
+   "devDependencies": {
+     "nodemon": "^3.1.0"
+diff --git a/server/public/index.html b/server/public/index.html
+index 28f0b6c..62374f4 100644
+--- a/server/public/index.html
++++ b/server/public/index.html
+@@ -195,6 +195,63 @@
+       td, th { padding: 0.4rem 0.5rem; }
+       .water-totals { grid-template-columns: 1fr 1fr; }
+     }
++
++    /* ── Irrigator Map tab ── */
++    #tab-irrigator {
++      margin: -1rem;
++      height: calc(100vh - 98px);
++    }
++    .irr-wrap { display: flex; height: 100%; }
++    .irr-sidebar {
++      width: 260px; min-width: 260px;
++      overflow-y: auto;
++      border-right: 1px solid var(--border);
++      padding: 12px;
++      display: flex; flex-direction: column; gap: 10px;
++      font-size: 0.85rem;
++    }
++    #irr-map { flex: 1; height: 100%; }
++    .irr-section-title {
++      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
++      letter-spacing: .08em; color: var(--muted); margin-bottom: 6px;
++    }
++    .irr-stat { display: flex; justify-content: space-between; padding: 2px 0; color: var(--muted); }
++    .irr-stat span:last-child { font-weight: 600; color: var(--text); }
++    .irr-card {
++      background: var(--card); border: 1px solid var(--border);
++      border-radius: 8px; padding: 10px;
++    }
++    .irr-badge {
++      font-size: 0.7rem; font-weight: 700; padding: 2px 6px;
++      border-radius: 10px; display: inline-block;
++    }
++    .irr-badge-green  { background:#1b5e20;color:#a5d6a7; }
++    .irr-badge-gray   { background:#333;color:#888; }
++    .irr-badge-amber  { background:#e65100;color:#ffe082; }
++    .irr-badge-red    { background:#b71c1c;color:#ffcdd2; }
++    .irr-alert-item {
++      background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4);
++      border-radius:6px; padding:7px; margin-bottom:5px; font-size:0.78rem;
++    }
++    .irr-alert-loc  { color:#ef4444; font-weight:600; }
++    .irr-alert-time { color:var(--muted); font-size:0.7rem; }
++    .irr-select {
++      width:100%; background:var(--bg); border:1px solid var(--border);
++      color:var(--text); padding:5px 7px; border-radius:6px; font-size:0.82rem;
++    }
++    .irr-btn {
++      padding:6px 10px; border:none; border-radius:6px;
++      cursor:pointer; font-size:0.8rem; font-weight:600;
++    }
++    .irr-btn-green { background:#2e7d32;color:#fff; }
++    .irr-btn-gray  { background:#333;color:#ccc; }
++    .irr-btn-red   { background:#c62828;color:#fff; }
++    .irr-hidden { display:none!important; }
++
++    /* Leaflet overrides for dark theme */
++    .leaflet-container { background:#222; }
++    .leaflet-popup-content-wrapper { background:#1a1d27; color:#e2e4ef; border:1px solid #2a2d3d; }
++    .leaflet-popup-tip { background:#1a1d27; }
+   </style>
+ </head>
+ <body>
+@@ -226,6 +283,7 @@
+   <nav class="tabs">
+     <button class="tab-btn active" onclick="switchTab('vat')">VAT Tap</button>
+     <button class="tab-btn" onclick="switchTab('water')">Water Meters</button>
++    <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
+   </nav>
+ 
+   <main>
+@@ -383,9 +441,75 @@
+         </table>
+       </div>
+     </div>
++
++    <!-- ── Irrigator Map tab ── -->
++    <div id="tab-irrigator" class="tab-panel">
++      <div class="irr-wrap">
++
++        <!-- Sidebar -->
++        <div class="irr-sidebar">
++          <!-- Live status -->
++          <div class="irr-card">
++            <div class="irr-section-title">
++              Live Status
++              <span id="irr-live-badge" class="irr-badge irr-badge-gray" style="margin-left:6px">No GPS</span>
++            </div>
++            <div class="irr-stat"><span>Pump</span>    <span id="irr-pump">—</span></div>
++            <div class="irr-stat"><span>Speed</span>   <span id="irr-speed">—</span></div>
++            <div class="irr-stat"><span>Battery</span> <span id="irr-batt">—</span></div>
++            <div class="irr-stat"><span>Last fix</span><span id="irr-time">—</span></div>
++          </div>
++
++          <!-- Session -->
++          <div class="irr-card">
++            <div class="irr-section-title">Session</div>
++            <select id="irr-session-sel" class="irr-select"><option value="">— select —</option></select>
++            <button class="irr-btn irr-btn-green" id="irr-btn-new" style="width:100%;margin-top:7px">+ New Session</button>
++          </div>
++
++          <!-- Spread stats -->
++          <div class="irr-card irr-hidden" id="irr-spread-card">
++            <div class="irr-section-title">Spread Stats</div>
++            <div class="irr-stat"><span>Area</span>      <span id="irr-area">—</span></div>
++            <div class="irr-stat"><span>Volume</span>    <span id="irr-vol">—</span></div>
++            <div class="irr-stat"><span>Rate</span>      <span id="irr-rate">—</span></div>
++            <div class="irr-stat"><span>Depth</span>     <span id="irr-depth">—</span></div>
++            <div class="irr-stat"><span>Duration</span>  <span id="irr-dur">—</span></div>
++            <button class="irr-btn irr-btn-gray" id="irr-btn-end" style="width:100%;margin-top:7px">End Session</button>
++          </div>
++
++          <!-- Alerts -->
++          <div class="irr-card">
++            <div class="irr-section-title">
++              Alerts
++              <span id="irr-alert-count" class="irr-badge irr-badge-red irr-hidden" style="margin-left:4px">0</span>
++            </div>
++            <div id="irr-alerts-list"><span style="color:var(--muted);font-size:0.78rem">No active alerts</span></div>
++          </div>
++        </div>
++
++        <!-- Map -->
++        <div id="irr-map"></div>
++      </div>
++    </div>
++
+   </main>
+ </div>
+ 
++<!-- Irrigator new-session modal -->
++<div id="irr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
++  <div style="background:#1a1d27;border:1px solid #2a2d3d;border-radius:10px;padding:22px;width:300px">
++    <h2 style="font-size:1rem;margin-bottom:14px">New Irrigator Session</h2>
++    <label>Name<input type="text"   id="irr-new-name"  style="display:block;width:100%;margin:4px 0 10px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px" placeholder="Paddock A"></label>
++    <label>Spread width (m)<input type="number" id="irr-new-width" value="30" style="display:block;width:100%;margin:4px 0 10px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px"></label>
++    <label>Flow rate (L/min)<input type="number" id="irr-new-flow"  value="833" style="display:block;width:100%;margin:4px 0 14px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px"></label>
++    <div style="display:flex;gap:8px">
++      <button class="irr-btn irr-btn-gray"  onclick="document.getElementById('irr-modal').style.display='none'" style="flex:1">Cancel</button>
++      <button class="irr-btn irr-btn-green" onclick="irrCreateSession()" style="flex:1">Create</button>
++    </div>
++  </div>
++</div>
++
+ <script>
+ // ──────────────────────────────────────────────────────────────────────
+ // VAT Tap chart
+@@ -853,12 +977,15 @@ let activeTab='vat';
+ 
+ function switchTab(tab){
+   activeTab=tab;
++  const tabs=['vat','water','irrigator'];
+   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+-    b.classList.toggle('active',(i===0&&tab==='vat')||(i===1&&tab==='water'));
++    b.classList.toggle('active', tabs[i]===tab);
++  });
++  tabs.forEach(t=>{
++    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+   });
+-  document.getElementById('tab-vat').classList.toggle('active',tab==='vat');
+-  document.getElementById('tab-water').classList.toggle('active',tab==='water');
+-  if (tab==='water') refreshWater();
++  if (tab==='water')     refreshWater();
++  if (tab==='irrigator') irrInit();
+ }
+ 
+ // ──────────────────────────────────────────────────────────────────────
+@@ -890,6 +1017,218 @@ function startSSE(){
+ document.getElementById('password').addEventListener('keydown',e=>{
+   if (e.key==='Enter') login();
+ });
++
++// ──────────────────────────────────────────────────────────────────────
++// Irrigator Map
++// All API calls go to /irrigator-api/* which the Node.js server
++// proxies to the Flask irrigator backend on port 5000.
++// ──────────────────────────────────────────────────────────────────────
++const IRR = '/irrigator-api';
++let irrReady=false, irrMap=null, irrLiveMarker=null;
++let irrTrackLayer=null, irrSpreadLayer=null, irrAlertLayer=null;
++let irrActiveSession=null;
++let irrLivePoll=null, irrAlertPoll=null;
++
++function irrInit(){
++  if (irrReady){ irrMap && irrMap.invalidateSize(); return; }
++
++  // Lazy-load Leaflet
++  function _setup(){
++    irrReady=true;
++    irrMap=L.map('irr-map',{zoomControl:true}).setView([-43.5,172.6],14);
++    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
++      {attribution:'Tiles © Esri',maxZoom:20}).addTo(irrMap);
++    irrTrackLayer  = L.layerGroup().addTo(irrMap);
++    irrSpreadLayer = L.layerGroup().addTo(irrMap);
++    irrAlertLayer  = L.layerGroup().addTo(irrMap);
++    irrLoadSessions();
++    irrPollLive();
++    irrPollAlerts();
++    irrLivePoll  = setInterval(irrPollLive,  15000);
++    irrAlertPoll = setInterval(irrPollAlerts, 30000);
++    setInterval(()=>{ if(irrActiveSession) irrLoadSessionData(irrActiveSession); }, 60000);
++  }
++
++  if(typeof L!=='undefined'){ _setup(); return; }
++  if(!document.getElementById('lf-css')){
++    const c=document.createElement('link');c.id='lf-css';c.rel='stylesheet';
++    c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(c);
++  }
++  const s=document.createElement('script');
++  s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
++  s.onload=_setup; document.head.appendChild(s);
++}
++
++// ── Live position ────────────────────────────────────────────────────
++async function irrPollLive(){
++  const pos=await irrApi('/live');
++  if(!pos){return;}
++  const pumpOn=pos.pump_on===1;
++  const spd=(pos.speed_cms/100).toFixed(1);
++  document.getElementById('irr-pump').textContent =pumpOn?'ON':'OFF';
++  document.getElementById('irr-pump').style.color =pumpOn?'#22c55e':'#ef4444';
++  document.getElementById('irr-speed').textContent=spd+' m/s';
++  document.getElementById('irr-batt').textContent =pos.battery_pct+'%';
++  document.getElementById('irr-time').textContent =
++    pos.timestamp ? new Date(pos.timestamp+'Z').toLocaleTimeString() : '—';
++  const badge=document.getElementById('irr-live-badge');
++  badge.textContent = pumpOn?'Pump ON':'GPS OK';
++  badge.className='irr-badge '+(pumpOn?'irr-badge-green':'irr-badge-amber');
++  if(irrMap){
++    const ll=[pos.lat,pos.lon];
++    if(!irrLiveMarker){
++      irrLiveMarker=L.circleMarker(ll,{radius:9,color:'#1e88e5',fillColor:'#42a5f5',fillOpacity:.9,weight:2})
++        .bindTooltip('Irrigator').addTo(irrMap);
++      irrMap.setView(ll,Math.max(irrMap.getZoom(),16));
++    } else { irrLiveMarker.setLatLng(ll); }
++  }
++}
++
++// ── Sessions ─────────────────────────────────────────────────────────
++async function irrLoadSessions(){
++  const list=await irrApi('/sessions');
++  if(!list) return;
++  const sel=document.getElementById('irr-session-sel');
++  sel.innerHTML='<option value="">— select session —</option>';
++  list.forEach(s=>{
++    const o=document.createElement('option');
++    o.value=s.id;
++    const dt=s.start_time?s.start_time.slice(0,10):'';
++    o.text=(s.end_time===null?'▶ ':'')+`${s.name||'Session '+s.id} (${dt}) · ${s.point_count??0} pts`;
++    sel.appendChild(o);
++  });
++}
++document.getElementById('irr-session-sel').addEventListener('change',e=>{
++  const id=parseInt(e.target.value);
++  irrClearLayers();
++  irrActiveSession=id||null;
++  document.getElementById('irr-spread-card').classList.toggle('irr-hidden',!id);
++  if(id) irrLoadSessionData(id);
++});
++
++async function irrLoadSessionData(sid){
++  irrClearLayers();
++  const [posList,spData]=await Promise.all([
++    irrApi(`/sessions/${sid}/positions`),
++    irrApi(`/sessions/${sid}/spread`),
++  ]);
++  if(posList&&posList.length>=2) irrRenderTrack(posList);
++  if(spData&&spData.geojson)     irrRenderSpread(spData.geojson,spData.stats);
++  else                           irrShowStats(null);
++}
++
++function irrClearLayers(){
++  if(irrTrackLayer)  irrTrackLayer.clearLayers();
++  if(irrSpreadLayer) irrSpreadLayer.clearLayers();
++}
++
++// ── Track ────────────────────────────────────────────────────────────
++function irrRenderTrack(pts){
++  const lls=pts.map(p=>[p.lat,p.lon]);
++  const poly=L.polyline(lls,{color:'#fff',weight:2,opacity:.7,dashArray:'6 4'}).addTo(irrTrackLayer);
++  // Direction arrows
++  const step=Math.max(1,Math.floor(pts.length/20));
++  for(let i=step;i<pts.length;i+=step){
++    const a=pts[i-step],b=pts[i];
++    const ang=irrBearing([a.lat,a.lon],[b.lat,b.lon]);
++    const mid=[(a.lat+b.lat)/2,(a.lon+b.lon)/2];
++    L.marker(mid,{
++      icon:L.divIcon({html:`<div style="transform:rotate(${ang}deg);color:#fff;font-size:13px;line-height:1">▲</div>`,iconSize:[13,13],className:''}),
++      interactive:false
++    }).addTo(irrTrackLayer);
++  }
++  irrMap.fitBounds(poly.getBounds(),{padding:[40,40]});
++}
++function irrBearing(from,to){
++  const dL=(to[1]-from[1])*Math.PI/180;
++  const la=from[0]*Math.PI/180,lb=to[0]*Math.PI/180;
++  const y=Math.sin(dL)*Math.cos(lb);
++  const x=Math.cos(la)*Math.sin(lb)-Math.sin(la)*Math.cos(lb)*Math.cos(dL);
++  return((Math.atan2(y,x)*180/Math.PI)+360)%360;
++}
++
++// ── Spread polygon ────────────────────────────────────────────────────
++function irrRenderSpread(gj,stats){
++  L.geoJSON(gj,{
++    filter:f=>f.properties.type==='spread',
++    style:{color:'#2e7d32',fillColor:'#4caf50',fillOpacity:.35,weight:1.5},
++  }).bindTooltip(f=>{
++    const p=f.properties;
++    return `Area: ${p.area_ha} ha<br>Volume: ${(p.volume_l/1000).toFixed(1)} m³<br>`
++          +`Rate: ${p.app_rate_l_m2} L/m²<br>Depth: ${p.depth_mm} mm`;
++  }).addTo(irrSpreadLayer);
++  irrShowStats(stats);
++}
++function irrShowStats(s){
++  if(!s){['area','vol','rate','depth','dur'].forEach(k=>document.getElementById('irr-'+k).textContent='—');return;}
++  document.getElementById('irr-area').textContent =`${s.area_ha} ha`;
++  document.getElementById('irr-vol').textContent  =`${(s.volume_l/1000).toFixed(1)} m³`;
++  document.getElementById('irr-rate').textContent =`${s.app_rate_l_m2} L/m²`;
++  document.getElementById('irr-depth').textContent=`${s.depth_mm} mm`;
++  document.getElementById('irr-dur').textContent  =`${s.duration_min} min`;
++}
++
++// ── Alerts ────────────────────────────────────────────────────────────
++async function irrPollAlerts(){
++  const alerts=await irrApi('/alerts');
++  if(!alerts) return;
++  const list=document.getElementById('irr-alerts-list');
++  const cnt =document.getElementById('irr-alert-count');
++  if(irrAlertLayer) irrAlertLayer.clearLayers();
++  if(!alerts.length){
++    list.innerHTML='<span style="color:var(--muted);font-size:0.78rem">No active alerts</span>';
++    cnt.classList.add('irr-hidden'); return;
++  }
++  cnt.textContent=alerts.length; cnt.classList.remove('irr-hidden');
++  list.innerHTML='';
++  alerts.forEach(a=>{
++    if(a.lat&&a.lon&&irrAlertLayer){
++      L.circleMarker([a.lat,a.lon],{radius:10,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.7,weight:2})
++        .bindPopup(`<b>STALL ALERT</b><br>${(a.timestamp||'').slice(0,16).replace('T',' ')}`)
++        .addTo(irrAlertLayer);
++    }
++    const loc=(a.lat&&a.lon)?`${a.lat.toFixed(5)}, ${a.lon.toFixed(5)}`:'Location unknown';
++    const div=document.createElement('div'); div.className='irr-alert-item';
++    div.innerHTML=`<div class="irr-alert-loc">⚠ IRRIGATOR STALLED</div>
++      <div class="irr-alert-time">${(a.timestamp||'').slice(0,16).replace('T',' ')} UTC</div>
++      <div style="font-size:0.7rem;color:var(--muted)">${loc}</div>
++      <button class="irr-btn irr-btn-gray" style="margin-top:4px;font-size:0.72rem;padding:2px 8px" onclick="irrAck(${a.id})">Acknowledge</button>`;
++    list.appendChild(div);
++  });
++}
++async function irrAck(id){ await irrApi(`/alerts/${id}/ack`,{method:'PUT'}); irrPollAlerts(); }
++
++// ── New session modal ─────────────────────────────────────────────────
++document.getElementById('irr-btn-new').addEventListener('click',()=>{
++  document.getElementById('irr-modal').style.display='flex';
++});
++async function irrCreateSession(){
++  const name =document.getElementById('irr-new-name').value||`Run ${new Date().toLocaleDateString()}`;
++  const width=parseFloat(document.getElementById('irr-new-width').value)||30;
++  const flow =parseFloat(document.getElementById('irr-new-flow').value)||833;
++  const ok=await irrApi('/sessions',{
++    method:'POST',headers:{'Content-Type':'application/json'},
++    body:JSON.stringify({name,spread_width_m:width,flow_rate_lpm:flow})
++  });
++  if(ok){ document.getElementById('irr-modal').style.display='none'; irrLoadSessions(); }
++}
++document.getElementById('irr-btn-end').addEventListener('click',async()=>{
++  if(!irrActiveSession) return;
++  await irrApi(`/sessions/${irrActiveSession}`,{
++    method:'PUT',headers:{'Content-Type':'application/json'},
++    body:JSON.stringify({end_time:new Date().toISOString()})
++  });
++  irrLoadSessions();
++});
++
++// ── API helper ────────────────────────────────────────────────────────
++async function irrApi(path,opts={}){
++  try{
++    const r=await fetch(IRR+path,{credentials:'include',...opts});
++    if(!r.ok) return null;
++    return r.json();
++  }catch(e){ return null; }
++}
+ </script>
+ </body>
+ </html>
+diff --git a/server/server.js b/server/server.js
+index d808e63..ebfada6 100644
+--- a/server/server.js
++++ b/server/server.js
+@@ -12,6 +12,7 @@ const fs           = require('fs');
+ const ExcelJS      = require('exceljs');
+ const nodemailer   = require('nodemailer');
+ const schedule     = require('node-schedule');
++const { createProxyMiddleware } = require('http-proxy-middleware');
+ 
+ const PORT            = process.env.PORT            || 3000;
+ const SECRET          = process.env.SESSION_SECRET  || 'change-this-secret-in-production';
+@@ -451,6 +452,19 @@ app.post('/api/water/report', requireAuth, async (req, res) => {
+   }
+ });
+ 
++// ─── Irrigator proxy ─────────────────────────────────────────────────────────
++// Flask server (irrigator-system/pi-server/app.py) runs on port 5000.
++// All calls to /irrigator-api/* are forwarded to Flask /api/* behind MVMS auth.
++app.use('/irrigator-api', requireAuth, createProxyMiddleware({
++  target: 'http://127.0.0.1:5000',
++  changeOrigin: true,
++  pathRewrite: { '^/irrigator-api': '/api' },
++  on: {
++    error: (_err, _req, res) =>
++      res.status(502).json({ error: 'Irrigator server unavailable — is Flask running on port 5000?' }),
++  },
++}));
++
+ // ─── Start ────────────────────────────────────────────────────────────────────
+ app.listen(PORT, () => {
+   console.log(`MVMS VAT Tap Monitor listening on http://0.0.0.0:${PORT}`);
