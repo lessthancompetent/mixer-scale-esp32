@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MVMS VAT Tap Monitor</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3d;
+      --text: #e2e4ef;
+      --muted: #6b7280;
+      --accent: #3b82f6;
+      --green: #22c55e;
+      --red: #ef4444;
+      --orange: #f97316;
+      --yellow: #eab308;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Login ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    .login-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 380px;
+    }
+    .login-card h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .login-card p  { color: var(--muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input[type=text], input[type=password] {
+      width: 100%; padding: 0.65rem 0.75rem;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 1rem;
+      margin-bottom: 1rem; outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      cursor: pointer; border: none; border-radius: 8px;
+      font-size: 0.9rem; font-weight: 600;
+      padding: 0.65rem 1.25rem; transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    .btn-primary  { background: var(--accent);  color: #fff; width: 100%; }
+    .btn-danger   { background: var(--red);     color: #fff; }
+    .btn-sm       { font-size: 0.78rem; padding: 0.3rem 0.65rem; }
+    .error-msg    { color: var(--red); font-size: 0.85rem; margin-top: 0.5rem; }
+
+    /* ── App shell ── */
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.1rem; }
+    header .user { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 0.75rem; }
+    main { flex: 1; padding: 1rem; max-width: 900px; margin: 0 auto; width: 100%; }
+
+    /* ── Cards ── */
+    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-bottom: 1rem; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem;
+    }
+    .card-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+    .card-value { font-size: 1.6rem; font-weight: 700; }
+    .card-sub   { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
+
+    .status-dot {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; margin-right: 0.4rem;
+    }
+    .dot-green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-red    { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
+    .dot-orange { background: var(--orange);box-shadow: 0 0 6px var(--orange);}
+    .dot-grey   { background: var(--muted); }
+
+    /* ── Alert banner ── */
+    #alert-banner {
+      display: none;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    #alert-banner.show { display: flex; align-items: center; gap: 0.75rem; justify-content: space-between; }
+
+    /* ── Chart ── */
+    .chart-wrap {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem; margin-bottom: 1rem;
+    }
+    .chart-wrap h2 { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    canvas { width: 100% !important; }
+    .chart-controls {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;
+    }
+    .chart-controls select, .chart-controls input[type=datetime-local] {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.82rem;
+    }
+    .chart-controls button { font-size: 0.82rem; padding: 0.3rem 0.75rem; background: var(--accent); color: #fff; }
+
+    /* ── Chart mode toggle ── */
+    .chart-toggle {
+      background: var(--bg);
+      border: 1px solid var(--border) !important;
+      color: var(--muted) !important;
+      font-size: 0.82rem !important;
+      padding: 0.3rem 0.75rem !important;
+      font-weight: 500;
+    }
+    .chart-toggle.active {
+      background: var(--accent) !important;
+      color: #fff !important;
+      border-color: var(--accent) !important;
+    }
+    .ctrl-row {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+      margin-bottom: 0.4rem;
+    }
+    .ctrl-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    .avg14-label {
+      font-size: 0.82rem; display: flex; align-items: center;
+      gap: 0.4rem; cursor: pointer; color: var(--text);
+    }
+    .avg14-label input { cursor: pointer; }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; margin-bottom: 1rem;
+    }
+    .table-wrap h2 { font-size: 0.9rem; color: var(--muted); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th { text-align: left; padding: 0.5rem 0.75rem; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+    td { padding: 0.45rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      display: inline-block; border-radius: 4px; padding: 0.1rem 0.4rem;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .tag-open    { background: rgba(34,197,94,0.15);  color: var(--green);  }
+    .tag-close   { background: rgba(107,114,128,0.2); color: var(--muted);  }
+    .tag-alert   { background: rgba(239,68,68,0.15);  color: var(--red);    }
+    .tag-log_end { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .tag-periodic{ background: rgba(234,179,8,0.12);  color: var(--yellow); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 0; border-bottom: 1px solid var(--border);
+      background: var(--card); padding: 0 1rem;
+    }
+    .tab-btn {
+      background: none; border: none; color: var(--muted);
+      padding: 0.65rem 1rem; font-size: 0.88rem; font-weight: 500;
+      border-bottom: 2px solid transparent; cursor: pointer;
+      border-radius: 0; transition: color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); opacity: 1; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Water meter totals ── */
+    .water-totals {
+      display: grid; gap: 1rem;
+      grid-template-columns: repeat(3, 1fr);
+      margin-bottom: 1rem;
+    }
+    .water-totals .card-value { font-size: 1.4rem; }
+
+    @media (max-width: 480px) {
+      .card-value { font-size: 1.3rem; }
+      td, th { padding: 0.4rem 0.5rem; }
+      .water-totals { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ── Irrigator Map tab ── */
+    #tab-irrigator {
+      margin: -1rem;
+      height: calc(100vh - 98px);
+    }
+    .irr-wrap { display: flex; height: 100%; }
+    .irr-sidebar {
+      width: 260px; min-width: 260px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 10px;
+      font-size: 0.85rem;
+    }
+    #irr-map { flex: 1; height: 100%; }
+    .irr-section-title {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); margin-bottom: 6px;
+    }
+    .irr-stat { display: flex; justify-content: space-between; padding: 2px 0; color: var(--muted); }
+    .irr-stat span:last-child { font-weight: 600; color: var(--text); }
+    .irr-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px;
+    }
+    .irr-badge {
+      font-size: 0.7rem; font-weight: 700; padding: 2px 6px;
+      border-radius: 10px; display: inline-block;
+    }
+    .irr-badge-green  { background:#1b5e20;color:#a5d6a7; }
+    .irr-badge-gray   { background:#333;color:#888; }
+    .irr-badge-amber  { background:#e65100;color:#ffe082; }
+    .irr-badge-red    { background:#b71c1c;color:#ffcdd2; }
+    .irr-alert-item {
+      background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4);
+      border-radius:6px; padding:7px; margin-bottom:5px; font-size:0.78rem;
+    }
+    .irr-alert-loc  { color:#ef4444; font-weight:600; }
+    .irr-alert-time { color:var(--muted); font-size:0.7rem; }
+    .irr-select {
+      width:100%; background:var(--bg); border:1px solid var(--border);
+      color:var(--text); padding:5px 7px; border-radius:6px; font-size:0.82rem;
+    }
+    .irr-btn {
+      padding:6px 10px; border:none; border-radius:6px;
+      cursor:pointer; font-size:0.8rem; font-weight:600;
+    }
+    .irr-btn-green { background:#2e7d32;color:#fff; }
+    .irr-btn-gray  { background:#333;color:#ccc; }
+    .irr-btn-red   { background:#c62828;color:#fff; }
+    .irr-hidden { display:none!important; }
+
+    /* Leaflet overrides for dark theme */
+    .leaflet-container { background:#222; }
+    .leaflet-popup-content-wrapper { background:#1a1d27; color:#e2e4ef; border:1px solid #2a2d3d; }
+    .leaflet-popup-tip { background:#1a1d27; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login ── -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>MVMS VAT Tap Monitor</h1>
+    <p>Sign in to view live tap data</p>
+    <label>Username</label>
+    <input type="text" id="username" autocomplete="username" placeholder="admin">
+    <label>Password</label>
+    <input type="password" id="password" autocomplete="current-password" placeholder="••••••">
+    <button class="btn-primary" onclick="login()">Sign in</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ── App ── -->
+<div id="app">
+  <header>
+    <h1>MVMS Monitor</h1>
+    <div class="user">
+      <span id="hdr-user"></span>
+      <button class="btn-danger btn-sm" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('vat')">VAT Tap</button>
+    <button class="tab-btn" onclick="switchTab('water')">Water Meters</button>
+    <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
+  </nav>
+
+  <main>
+    <!-- ── VAT Tap tab ── -->
+    <div id="tab-vat" class="tab-panel active">
+      <div id="alert-banner">
+        <span id="alert-text"></span>
+        <button class="btn-sm btn-danger" onclick="acknowledgeLatestAlert()">Acknowledge</button>
+      </div>
+
+      <div class="grid" id="status-cards">
+        <div class="card">
+          <div class="card-label">Tap status</div>
+          <div class="card-value" id="s-tap">—</div>
+          <div class="card-sub" id="s-tap-sub"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Temperature</div>
+          <div class="card-value" id="s-temp">—</div>
+          <div class="card-sub">pipe sensor</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Solenoid</div>
+          <div class="card-value" id="s-sol">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Logging</div>
+          <div class="card-value" id="s-log">—</div>
+          <div class="card-sub" id="s-log-sub"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Last event</div>
+          <div class="card-value" id="s-event" style="font-size:1rem">—</div>
+          <div class="card-sub" id="s-event-time"></div>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <h2>Temperature history</h2>
+        <div class="chart-controls">
+          <select id="chart-range" onchange="onRangeChange()">
+            <option value="2">Last 2 hours</option>
+            <option value="6">Last 6 hours</option>
+            <option value="24">Last 24 hours</option>
+            <option value="168">Last 7 days</option>
+            <option value="720">Last 30 days</option>
+            <option value="custom">Custom range</option>
+          </select>
+          <span id="custom-range" style="display:none;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <input type="datetime-local" id="range-from">
+            <span style="color:var(--muted)">to</span>
+            <input type="datetime-local" id="range-to">
+            <button onclick="loadChart()">Apply</button>
+          </span>
+        </div>
+        <canvas id="tempChart" height="180"></canvas>
+      </div>
+
+      <div class="table-wrap">
+        <h2>Recent readings</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>Event</th><th>Temp °C</th><th>Tap open min</th><th>Log min</th>
+            </tr>
+          </thead>
+          <tbody id="readings-tbody">
+            <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Water Meters tab ── -->
+    <div id="tab-water" class="tab-panel">
+
+      <!-- All-time totals -->
+      <div class="water-totals" style="margin-top:0.5rem">
+        <div class="card">
+          <div class="card-label">Tank (all time)</div>
+          <div class="card-value" id="w-tank-total">—</div>
+          <div class="card-sub">litres</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Farm (all time)</div>
+          <div class="card-value" id="w-farm-total">—</div>
+          <div class="card-sub">litres</div>
+        </div>
+        <div class="card" id="w-shed-card">
+          <div class="card-label">Shed (all time)</div>
+          <div class="card-value" id="w-shed-total">—</div>
+          <div class="card-sub">tank − farm</div>
+        </div>
+      </div>
+
+      <!-- Chart + controls -->
+      <div class="chart-wrap">
+        <h2 id="water-chart-title">Water usage — volume (L)</h2>
+
+        <!-- Chart type -->
+        <div class="ctrl-row">
+          <span class="ctrl-label">Chart:</span>
+          <button id="btn-vol" class="chart-toggle active" onclick="setWaterMode('volume')">Volume (L)</button>
+          <button id="btn-flow" class="chart-toggle" onclick="setWaterMode('flow')">Flow Rate (L/hr)</button>
+        </div>
+
+        <!-- Bucket + Window -->
+        <div class="ctrl-row">
+          <span class="ctrl-label">Period:</span>
+          <select id="water-bucket" onchange="loadWaterChart()">
+            <option value="5min">5 min</option>
+            <option value="10min">10 min</option>
+            <option value="30min">30 min</option>
+            <option value="1hr" selected>1 hr</option>
+            <option value="4hr">4 hr</option>
+            <option value="1day">1 day</option>
+          </select>
+          <span class="ctrl-label">Window:</span>
+          <select id="water-window" onchange="onWaterWindowChange()">
+            <option value="1hr">1 hr</option>
+            <option value="6hr">6 hr</option>
+            <option value="24hr" selected>24 hr</option>
+            <option value="3day">3 days</option>
+            <option value="7day">7 days</option>
+            <option value="30day">30 days</option>
+          </select>
+        </div>
+
+        <!-- 14-day average -->
+        <div class="ctrl-row">
+          <label class="avg14-label">
+            <input type="checkbox" id="water-avg14" onchange="loadWaterChart()">
+            Compare 14-day rolling average
+          </label>
+        </div>
+
+        <canvas id="waterChart" height="220"></canvas>
+      </div>
+
+      <!-- Daily breakdown table -->
+      <div class="table-wrap">
+        <h2>Daily breakdown (last 30 days)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Tank (L)</th>
+              <th>Farm (L)</th>
+              <th id="shed-th" class="shed-col">Shed (L)</th>
+            </tr>
+          </thead>
+          <tbody id="water-tbody">
+            <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Irrigator Map tab ── -->
+    <div id="tab-irrigator" class="tab-panel">
+      <div class="irr-wrap">
+
+        <!-- Sidebar -->
+        <div class="irr-sidebar">
+          <!-- Live status -->
+          <div class="irr-card">
+            <div class="irr-section-title">
+              Live Status
+              <span id="irr-live-badge" class="irr-badge irr-badge-gray" style="margin-left:6px">No GPS</span>
+            </div>
+            <div class="irr-stat"><span>Pump</span>    <span id="irr-pump">—</span></div>
+            <div class="irr-stat"><span>Speed</span>   <span id="irr-speed">—</span></div>
+            <div class="irr-stat"><span>Battery</span> <span id="irr-batt">—</span></div>
+            <div class="irr-stat"><span>Last fix</span><span id="irr-time">—</span></div>
+          </div>
+
+          <!-- Session -->
+          <div class="irr-card">
+            <div class="irr-section-title">Session</div>
+            <select id="irr-session-sel" class="irr-select"><option value="">— select —</option></select>
+            <button class="irr-btn irr-btn-green" id="irr-btn-new" style="width:100%;margin-top:7px">+ New Session</button>
+          </div>
+
+          <!-- Spread stats -->
+          <div class="irr-card irr-hidden" id="irr-spread-card">
+            <div class="irr-section-title">Spread Stats</div>
+            <div class="irr-stat"><span>Area</span>      <span id="irr-area">—</span></div>
+            <div class="irr-stat"><span>Volume</span>    <span id="irr-vol">—</span></div>
+            <div class="irr-stat"><span>Rate</span>      <span id="irr-rate">—</span></div>
+            <div class="irr-stat"><span>Depth</span>     <span id="irr-depth">—</span></div>
+            <div class="irr-stat"><span>Duration</span>  <span id="irr-dur">—</span></div>
+            <button class="irr-btn irr-btn-gray" id="irr-btn-end" style="width:100%;margin-top:7px">End Session</button>
+          </div>
+
+          <!-- Alerts -->
+          <div class="irr-card">
+            <div class="irr-section-title">
+              Alerts
+              <span id="irr-alert-count" class="irr-badge irr-badge-red irr-hidden" style="margin-left:4px">0</span>
+            </div>
+            <div id="irr-alerts-list"><span style="color:var(--muted);font-size:0.78rem">No active alerts</span></div>
+          </div>
+        </div>
+
+        <!-- Map -->
+        <div id="irr-map"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Irrigator new-session modal -->
+<div id="irr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#1a1d27;border:1px solid #2a2d3d;border-radius:10px;padding:22px;width:300px">
+    <h2 style="font-size:1rem;margin-bottom:14px">New Irrigator Session</h2>
+    <label>Name<input type="text"   id="irr-new-name"  style="display:block;width:100%;margin:4px 0 10px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px" placeholder="Paddock A"></label>
+    <label>Spread width (m)<input type="number" id="irr-new-width" value="30" style="display:block;width:100%;margin:4px 0 10px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px"></label>
+    <label>Flow rate (L/min)<input type="number" id="irr-new-flow"  value="833" style="display:block;width:100%;margin:4px 0 14px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px"></label>
+    <div style="display:flex;gap:8px">
+      <button class="irr-btn irr-btn-gray"  onclick="document.getElementById('irr-modal').style.display='none'" style="flex:1">Cancel</button>
+      <button class="irr-btn irr-btn-green" onclick="irrCreateSession()" style="flex:1">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────────────────────
+// VAT Tap chart
+// ──────────────────────────────────────────────────────────────────────
+function drawTempChart(labels, values) {
+  const canvas = document.getElementById('tempChart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = 180;
+  canvas.width = W; canvas.height = H;
+
+  if (!values.length) {
+    ctx.fillStyle = '#6b7280'; ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText('No data in range', W/2, H/2);
+    return;
+  }
+
+  const pad = { top:20, right:20, bottom:35, left:45 };
+  const pW = W-pad.left-pad.right, pH = H-pad.top-pad.bottom;
+  const minV = Math.min(...values)-1, maxV = Math.max(...values)+1, range = maxV-minV||1;
+  const xS = i => pad.left+(i/(values.length-1||1))*pW;
+  const yS = v => pad.top+pH-((v-minV)/range)*pH;
+
+  ctx.strokeStyle='#2a2d3d'; ctx.lineWidth=1;
+  for (let g=0;g<=4;g++) {
+    const y=pad.top+(g/4)*pH;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+pW,y);ctx.stroke();
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText((maxV-(g/4)*range).toFixed(1),pad.left-5,y+4);
+  }
+  if (15>=minV && 15<=maxV) {
+    const yA=yS(15);
+    ctx.strokeStyle='rgba(239,68,68,0.5)';ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(pad.left,yA);ctx.lineTo(pad.left+pW,yA);ctx.stroke();
+    ctx.setLineDash([]);ctx.fillStyle='#ef4444';ctx.font='9px sans-serif';ctx.textAlign='left';
+    ctx.fillText('15°C alert',pad.left+4,yA-3);
+  }
+  const grad=ctx.createLinearGradient(0,pad.top,0,pad.top+pH);
+  grad.addColorStop(0,'rgba(59,130,246,0.35)');grad.addColorStop(1,'rgba(59,130,246,0)');
+  ctx.beginPath();ctx.moveTo(xS(0),yS(values[0]));
+  for (let i=1;i<values.length;i++) ctx.lineTo(xS(i),yS(values[i]));
+  ctx.lineTo(xS(values.length-1),pad.top+pH);ctx.lineTo(xS(0),pad.top+pH);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  ctx.beginPath();ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;ctx.lineJoin='round';
+  ctx.moveTo(xS(0),yS(values[0]));
+  for (let i=1;i<values.length;i++) ctx.lineTo(xS(i),yS(values[i]));
+  ctx.stroke();
+  const step=Math.max(1,Math.floor(labels.length/5));
+  ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='center';
+  for (let i=0;i<labels.length;i+=step) ctx.fillText(labels[i],xS(i),H-8);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Water meter charts
+// ──────────────────────────────────────────────────────────────────────
+
+function fmtBucket(bucket) {
+  if (!bucket) return '';
+  const d = new Date(bucket.replace(' ','T')+'Z');
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  // within last 7 days: show day + time
+  const diffDays = (now - d) / 86400000;
+  if (diffDays < 7) return d.toLocaleDateString([],{weekday:'short'})+' '
+    +d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString([],{month:'short',day:'numeric'});
+}
+
+function mergeAvg14(data, avg14, mode, bucketSecs) {
+  if (!avg14 || !avg14.length) return data.map(r => ({...r, avgTank:null, avgFarm:null}));
+
+  if (avg14[0].slot === -1) {
+    // flat line (daily bucket)
+    const aT = mode==='flow' ? avg14[0].avg_tank_lph : avg14[0].avg_tank_litres;
+    const aF = mode==='flow' ? avg14[0].avg_farm_lph : avg14[0].avg_farm_litres;
+    return data.map(r => ({...r, avgTank:aT, avgFarm:aF}));
+  }
+
+  const slotMap = {};
+  avg14.forEach(r => { slotMap[r.slot] = r; });
+  return data.map(r => {
+    const d = new Date(r.bucket.replace(' ','T')+'Z');
+    const sod = d.getUTCHours()*3600 + d.getUTCMinutes()*60 + d.getUTCSeconds();
+    const slot = Math.floor(sod / bucketSecs);
+    const avg = slotMap[slot];
+    return {
+      ...r,
+      avgTank: avg ? (mode==='flow' ? avg.avg_tank_lph : avg.avg_tank_litres) : null,
+      avgFarm: avg ? (mode==='flow' ? avg.avg_farm_lph : avg.avg_farm_litres) : null,
+    };
+  });
+}
+
+function drawWaterBars(canvas, pts, showShed) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = 220;
+  canvas.width = W; canvas.height = H;
+
+  if (!pts.length) {
+    ctx.fillStyle='#6b7280';ctx.font='13px sans-serif';
+    ctx.textAlign='center';ctx.fillText('No data for this period',W/2,H/2);
+    return;
+  }
+
+  const pad={top:25,right:20,bottom:40,left:60};
+  const pW=W-pad.left-pad.right, pH=H-pad.top-pad.bottom;
+  const n=pts.length, colW=pW/n;
+  const nBars=showShed?3:2;
+  const barW=Math.max(2,Math.floor(colW*0.72/nBars));
+  const gap=Math.max(1,Math.floor(barW*0.25));
+  const groupW=nBars*(barW+gap)-gap;
+
+  const hasAvg=pts.some(r=>r.avgTank!==null);
+  const allV=pts.flatMap(r=>[
+    r.tank_litres,r.farm_litres,
+    showShed?Math.max(0,r.shed_litres):0,
+    hasAvg?r.avgTank??0:0,
+    hasAvg?r.avgFarm??0:0,
+  ]);
+  const maxV=Math.max(...allV,1);
+  const yS=v=>pad.top+pH-(Math.max(0,v)/maxV)*pH;
+  const xCenter=i=>pad.left+(i+0.5)*colW;
+
+  // grid
+  ctx.strokeStyle='#2a2d3d';ctx.lineWidth=1;
+  for (let g=0;g<=4;g++) {
+    const y=pad.top+(g/4)*pH;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+pW,y);ctx.stroke();
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText(Math.round(maxV*(1-g/4)).toLocaleString(),pad.left-5,y+4);
+  }
+
+  // bars
+  for (let i=0;i<n;i++) {
+    const r=pts[i];
+    const x0=pad.left+i*colW+(colW-groupW)/2;
+
+    const th=(r.tank_litres/maxV)*pH;
+    ctx.fillStyle='#3b82f6';
+    ctx.fillRect(x0,pad.top+pH-th,barW,th);
+
+    const fh=(r.farm_litres/maxV)*pH;
+    ctx.fillStyle='#22c55e';
+    ctx.fillRect(x0+barW+gap,pad.top+pH-fh,barW,fh);
+
+    if (showShed) {
+      const sh=(Math.max(0,r.shed_litres)/maxV)*pH;
+      ctx.fillStyle='#f97316';
+      ctx.fillRect(x0+(barW+gap)*2,pad.top+pH-sh,barW,sh);
+    }
+  }
+
+  // avg14 dashed lines
+  if (hasAvg) {
+    function drawAvgLine(vals, color) {
+      ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);
+      ctx.beginPath();let s=false;
+      vals.forEach((v,i)=>{
+        if (v===null) return;
+        const x=xCenter(i),y=yS(v);
+        s?ctx.lineTo(x,y):(ctx.moveTo(x,y),s=true);
+      });
+      ctx.stroke();ctx.setLineDash([]);
+    }
+    drawAvgLine(pts.map(r=>r.avgTank),'rgba(59,130,246,0.75)');
+    drawAvgLine(pts.map(r=>r.avgFarm),'rgba(34,197,94,0.75)');
+  }
+
+  // x labels
+  const step=Math.max(1,Math.floor(n/7));
+  ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='center';
+  for (let i=0;i<n;i+=step) ctx.fillText(fmtBucket(pts[i].bucket),xCenter(i),H-8);
+
+  // legend
+  const leg=[['#3b82f6','Tank'],['#22c55e','Farm']];
+  if (showShed) leg.push(['#f97316','Shed']);
+  if (hasAvg) leg.push(['rgba(120,140,220,0.9)','14d avg']);
+  leg.forEach(([c,l],i)=>{
+    ctx.fillStyle=c;ctx.fillRect(pad.left+i*65,5,10,8);
+    ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='left';
+    ctx.fillText(l,pad.left+i*65+13,13);
+  });
+}
+
+function drawWaterLines(canvas, pts) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = 220;
+  canvas.width = W; canvas.height = H;
+
+  if (!pts.length) {
+    ctx.fillStyle='#6b7280';ctx.font='13px sans-serif';
+    ctx.textAlign='center';ctx.fillText('No data for this period',W/2,H/2);
+    return;
+  }
+
+  const pad={top:25,right:20,bottom:40,left:60};
+  const pW=W-pad.left-pad.right, pH=H-pad.top-pad.bottom;
+  const n=pts.length;
+  const hasAvg=pts.some(r=>r.avgTank!==null);
+
+  const allV=[
+    ...pts.map(r=>r.tank_lph),
+    ...pts.map(r=>r.farm_lph),
+    ...(hasAvg?pts.map(r=>r.avgTank??0):[]),
+    ...(hasAvg?pts.map(r=>r.avgFarm??0):[]),
+  ];
+  const maxV=Math.max(...allV,1);
+  const xS=i=>pad.left+(i/(n-1||1))*pW;
+  const yS=v=>pad.top+pH-(Math.max(0,v)/maxV)*pH;
+
+  // grid
+  ctx.strokeStyle='#2a2d3d';ctx.lineWidth=1;
+  for (let g=0;g<=4;g++) {
+    const y=pad.top+(g/4)*pH;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+pW,y);ctx.stroke();
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText(Math.round(maxV*(1-g/4)).toLocaleString(),pad.left-5,y+4);
+  }
+
+  function drawLine(getV, color, dash=[]) {
+    ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;
+    ctx.lineJoin='round';ctx.setLineDash(dash);
+    let s=false;
+    pts.forEach((r,i)=>{
+      const v=getV(r);
+      if (v===null||v===undefined) return;
+      const x=xS(i),y=yS(v);
+      s?ctx.lineTo(x,y):(ctx.moveTo(x,y),s=true);
+    });
+    ctx.stroke();ctx.setLineDash([]);
+  }
+
+  // gradient fill under tank
+  const grad=ctx.createLinearGradient(0,pad.top,0,pad.top+pH);
+  grad.addColorStop(0,'rgba(59,130,246,0.2)');grad.addColorStop(1,'rgba(59,130,246,0)');
+  ctx.beginPath();
+  pts.forEach((r,i)=>i===0?ctx.moveTo(xS(0),yS(r.tank_lph)):ctx.lineTo(xS(i),yS(r.tank_lph)));
+  ctx.lineTo(xS(n-1),pad.top+pH);ctx.lineTo(xS(0),pad.top+pH);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+
+  drawLine(r=>r.tank_lph,'#3b82f6');
+  drawLine(r=>r.farm_lph,'#22c55e');
+  if (hasAvg) {
+    drawLine(r=>r.avgTank,'rgba(59,130,246,0.6)',[5,3]);
+    drawLine(r=>r.avgFarm,'rgba(34,197,94,0.6)',[5,3]);
+  }
+
+  // x labels
+  const step=Math.max(1,Math.floor(n/7));
+  ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='center';
+  for (let i=0;i<n;i+=step) ctx.fillText(fmtBucket(pts[i].bucket),xS(i),H-8);
+
+  // legend
+  const leg=[['#3b82f6','Tank L/hr'],['#22c55e','Farm L/hr']];
+  if (hasAvg) leg.push(['rgba(120,140,220,0.9)','14d avg']);
+  leg.forEach(([c,l],i)=>{
+    ctx.fillStyle=c;ctx.fillRect(pad.left+i*80,5,10,8);
+    ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='left';
+    ctx.fillText(l,pad.left+i*80+13,13);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// API helpers
+// ──────────────────────────────────────────────────────────────────────
+async function api(path, opts={}) {
+  const r = await fetch(path,{credentials:'include',...opts});
+  if (r.status===401){showLogin();return null;}
+  return r.json();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Auth
+// ──────────────────────────────────────────────────────────────────────
+async function login() {
+  const username=document.getElementById('username').value;
+  const password=document.getElementById('password').value;
+  const r=await fetch('/api/login',{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username,password}),
+  });
+  const data=await r.json();
+  if (!r.ok){document.getElementById('login-error').textContent=data.error||'Login failed';return;}
+  showApp(data.username);
+}
+async function logout(){await fetch('/api/logout',{method:'POST',credentials:'include'});showLogin();}
+function showLogin(){
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('app').style.display='none';
+}
+let sseStarted=false;
+function showApp(username){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='flex';
+  document.getElementById('hdr-user').textContent=username;
+  refreshAll();
+  if (!sseStarted){sseStarted=true;startSSE();}
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// VAT tap controls
+// ──────────────────────────────────────────────────────────────────────
+function onRangeChange(){
+  const val=document.getElementById('chart-range').value;
+  document.getElementById('custom-range').style.display=val==='custom'?'flex':'none';
+  if (val!=='custom') loadChart();
+}
+async function loadChart(){
+  const val=document.getElementById('chart-range').value;
+  let url;
+  if (val==='custom'){
+    const from=document.getElementById('range-from').value;
+    const to=document.getElementById('range-to').value;
+    if (!from||!to) return;
+    url=`/api/readings/chart?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  } else {
+    url=`/api/readings/chart?hours=${val}`;
+  }
+  const chart=await api(url);
+  if (chart&&chart.length){
+    drawTempChart(chart.map(r=>fmtTime(r.received_at)),chart.map(r=>r.temp_c).filter(v=>v!==null));
+  } else {
+    drawTempChart([],[]);
+  }
+}
+
+let latestAlertId=null;
+function fmtTime(ts){
+  if (!ts) return '—';
+  return new Date(ts+'Z').toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function tagHtml(name){
+  return `<span class="tag tag-${name}">${name.replace('_',' ')}</span>`;
+}
+
+async function refreshAll(){
+  const [latest,alerts]=await Promise.all([api('/api/readings/latest'),api('/api/alerts')]);
+  if (latest){
+    const tapOpen=latest.tap_open;
+    document.getElementById('s-tap').innerHTML=
+      `<span class="status-dot ${tapOpen?'dot-green':'dot-grey'}"></span>${tapOpen?'Open':'Closed'}`;
+    document.getElementById('s-tap-sub').textContent=tapOpen?`${latest.mins_open} min open`:'';
+    const tempC=latest.temp_c;
+    const tempColor=tempC>15?'var(--red)':(tempC>10?'var(--orange)':'var(--text)');
+    document.getElementById('s-temp').innerHTML=
+      `<span style="color:${tempColor}">${tempC!=null?tempC.toFixed(2)+'°C':'—'}</span>`;
+    document.getElementById('s-sol').innerHTML=
+      `<span class="status-dot ${latest.solenoid_on?'dot-green':'dot-grey'}"></span>${latest.solenoid_on?'Open':'Closed'}`;
+    const logging=latest.event_name!=='log_end'&&(tapOpen||latest.mins_log>0);
+    document.getElementById('s-log').textContent=logging?'Active':'Idle';
+    document.getElementById('s-log-sub').textContent=latest.mins_log?`${latest.mins_log} min`:'';
+    document.getElementById('s-event').innerHTML=tagHtml(latest.event_name||'unknown');
+    document.getElementById('s-event-time').textContent=fmtTime(latest.received_at);
+  }
+  const unack=(alerts||[]).find(a=>!a.acknowledged);
+  const banner=document.getElementById('alert-banner');
+  if (unack){
+    latestAlertId=unack.id;
+    document.getElementById('alert-text').textContent=
+      `TEMPERATURE ALERT: ${unack.temp_c?.toFixed(2)}°C after ${unack.mins_open} min — ${fmtTime(unack.triggered_at)}`;
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+  loadChart();
+  const readings=await api('/api/readings?limit=50');
+  const tbody=document.getElementById('readings-tbody');
+  if (readings&&readings.length){
+    tbody.innerHTML=readings.map(r=>`
+      <tr>
+        <td>${fmtTime(r.received_at)}</td>
+        <td>${tagHtml(r.event_name||'unknown')}</td>
+        <td style="color:${r.temp_c>15?'var(--red)':'inherit'}">${r.temp_c!=null?r.temp_c.toFixed(2):'—'}</td>
+        <td>${r.mins_open??'—'}</td>
+        <td>${r.mins_log??'—'}</td>
+      </tr>
+    `).join('');
+  } else {
+    tbody.innerHTML='<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">No readings yet</td></tr>';
+  }
+}
+async function acknowledgeLatestAlert(){
+  if (!latestAlertId) return;
+  await api(`/api/alerts/${latestAlertId}/acknowledge`,{method:'POST'});
+  refreshAll();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Water meter controls
+// ──────────────────────────────────────────────────────────────────────
+let waterMode='volume';
+
+function shedVisible(){
+  return ['24hr','3day','7day','30day'].includes(document.getElementById('water-window').value);
+}
+
+function setWaterMode(mode){
+  waterMode=mode;
+  document.getElementById('btn-vol').classList.toggle('active',mode==='volume');
+  document.getElementById('btn-flow').classList.toggle('active',mode==='flow');
+  loadWaterChart();
+}
+
+function onWaterWindowChange(){
+  const shed=shedVisible();
+  document.getElementById('w-shed-card').style.display=shed?'':'none';
+  document.querySelectorAll('.shed-col').forEach(el=>el.style.display=shed?'':'none');
+  loadWaterChart();
+}
+
+async function loadWaterChart(){
+  const bucket=document.getElementById('water-bucket').value;
+  const window=document.getElementById('water-window').value;
+  const avg14=document.getElementById('water-avg14').checked;
+  const shed=shedVisible();
+
+  const title=waterMode==='flow'?'Flow rate — L per hour':'Water usage — volume (L)';
+  document.getElementById('water-chart-title').textContent=title;
+
+  const result=await api(`/api/water/chart?bucket=${bucket}&window=${window}&avg14=${avg14}`);
+  if (!result) return;
+
+  const pts=mergeAvg14(result.data,result.avg14,waterMode,result.bucketSecs);
+  const canvas=document.getElementById('waterChart');
+  if (waterMode==='flow') {
+    drawWaterLines(canvas,pts);
+  } else {
+    drawWaterBars(canvas,pts,shed);
+  }
+}
+
+async function refreshWater(){
+  const [totals]=await Promise.all([
+    api('/api/water/totals'),
+    loadWaterChart(),
+  ]);
+  if (totals){
+    document.getElementById('w-tank-total').textContent=totals.tank_litres?.toLocaleString()??'—';
+    document.getElementById('w-farm-total').textContent=totals.farm_litres?.toLocaleString()??'—';
+    document.getElementById('w-shed-total').textContent=totals.shed_litres?.toLocaleString()??'—';
+  }
+
+  const shed=shedVisible();
+  const daily=await api('/api/water/daily?days=30');
+  const tbody=document.getElementById('water-tbody');
+  if (daily&&daily.length){
+    tbody.innerHTML=[...daily].reverse().map(r=>`
+      <tr>
+        <td>${r.day}</td>
+        <td>${r.tank_litres?.toLocaleString()}</td>
+        <td>${r.farm_litres?.toLocaleString()}</td>
+        <td class="shed-col" style="${shed?'':'display:none'};color:var(--orange)">${r.shed_litres?.toLocaleString()}</td>
+      </tr>
+    `).join('');
+  } else {
+    tbody.innerHTML=`<tr><td colspan="${shed?4:3}" style="color:var(--muted);text-align:center;padding:1.5rem">No data yet</td></tr>`;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Tab switching
+// ──────────────────────────────────────────────────────────────────────
+let activeTab='vat';
+
+function switchTab(tab){
+  activeTab=tab;
+  const tabs=['vat','water','irrigator'];
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active', tabs[i]===tab);
+  });
+  tabs.forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+  });
+  if (tab==='water')     refreshWater();
+  if (tab==='irrigator') irrInit();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Boot + polling
+// ──────────────────────────────────────────────────────────────────────
+(async()=>{
+  const me=await api('/api/me');
+  if (me) showApp(me.username);
+  else showLogin();
+})();
+
+setInterval(()=>{
+  if (document.getElementById('app').style.display!=='none'){
+    if (activeTab==='vat') refreshAll();
+    else refreshWater();
+  }
+},30000);
+
+function startSSE(){
+  const es=new EventSource('/api/events');
+  es.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if (d.type==='water'){if (activeTab==='water') refreshWater();}
+    else {if (activeTab==='vat') refreshAll();}
+  };
+  es.onerror=()=>setTimeout(startSSE,5000);
+}
+
+document.getElementById('password').addEventListener('keydown',e=>{
+  if (e.key==='Enter') login();
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Irrigator Map
+// All API calls go to /irrigator-api/* which the Node.js server
+// proxies to the Flask irrigator backend on port 5000.
+// ──────────────────────────────────────────────────────────────────────
+const IRR = '/irrigator-api';
+let irrReady=false, irrMap=null, irrLiveMarker=null;
+let irrTrackLayer=null, irrSpreadLayer=null, irrAlertLayer=null;
+let irrActiveSession=null;
+let irrLivePoll=null, irrAlertPoll=null;
+
+function irrInit(){
+  if (irrReady){ irrMap && irrMap.invalidateSize(); return; }
+
+  // Lazy-load Leaflet
+  function _setup(){
+    irrReady=true;
+    irrMap=L.map('irr-map',{zoomControl:true}).setView([-43.5,172.6],14);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {attribution:'Tiles © Esri',maxZoom:20}).addTo(irrMap);
+    irrTrackLayer  = L.layerGroup().addTo(irrMap);
+    irrSpreadLayer = L.layerGroup().addTo(irrMap);
+    irrAlertLayer  = L.layerGroup().addTo(irrMap);
+    irrLoadSessions();
+    irrPollLive();
+    irrPollAlerts();
+    irrLivePoll  = setInterval(irrPollLive,  15000);
+    irrAlertPoll = setInterval(irrPollAlerts, 30000);
+    setInterval(()=>{ if(irrActiveSession) irrLoadSessionData(irrActiveSession); }, 60000);
+  }
+
+  if(typeof L!=='undefined'){ _setup(); return; }
+  if(!document.getElementById('lf-css')){
+    const c=document.createElement('link');c.id='lf-css';c.rel='stylesheet';
+    c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(c);
+  }
+  const s=document.createElement('script');
+  s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload=_setup; document.head.appendChild(s);
+}
+
+// ── Live position ────────────────────────────────────────────────────
+async function irrPollLive(){
+  const pos=await irrApi('/live');
+  if(!pos){return;}
+  const pumpOn=pos.pump_on===1;
+  const spd=(pos.speed_cms/100).toFixed(1);
+  document.getElementById('irr-pump').textContent =pumpOn?'ON':'OFF';
+  document.getElementById('irr-pump').style.color =pumpOn?'#22c55e':'#ef4444';
+  document.getElementById('irr-speed').textContent=spd+' m/s';
+  document.getElementById('irr-batt').textContent =pos.battery_pct+'%';
+  document.getElementById('irr-time').textContent =
+    pos.timestamp ? new Date(pos.timestamp+'Z').toLocaleTimeString() : '—';
+  const badge=document.getElementById('irr-live-badge');
+  badge.textContent = pumpOn?'Pump ON':'GPS OK';
+  badge.className='irr-badge '+(pumpOn?'irr-badge-green':'irr-badge-amber');
+  if(irrMap){
+    const ll=[pos.lat,pos.lon];
+    if(!irrLiveMarker){
+      irrLiveMarker=L.circleMarker(ll,{radius:9,color:'#1e88e5',fillColor:'#42a5f5',fillOpacity:.9,weight:2})
+        .bindTooltip('Irrigator').addTo(irrMap);
+      irrMap.setView(ll,Math.max(irrMap.getZoom(),16));
+    } else { irrLiveMarker.setLatLng(ll); }
+  }
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────
+async function irrLoadSessions(){
+  const list=await irrApi('/sessions');
+  if(!list) return;
+  const sel=document.getElementById('irr-session-sel');
+  sel.innerHTML='<option value="">— select session —</option>';
+  list.forEach(s=>{
+    const o=document.createElement('option');
+    o.value=s.id;
+    const dt=s.start_time?s.start_time.slice(0,10):'';
+    o.text=(s.end_time===null?'▶ ':'')+`${s.name||'Session '+s.id} (${dt}) · ${s.point_count??0} pts`;
+    sel.appendChild(o);
+  });
+}
+document.getElementById('irr-session-sel').addEventListener('change',e=>{
+  const id=parseInt(e.target.value);
+  irrClearLayers();
+  irrActiveSession=id||null;
+  document.getElementById('irr-spread-card').classList.toggle('irr-hidden',!id);
+  if(id) irrLoadSessionData(id);
+});
+
+async function irrLoadSessionData(sid){
+  irrClearLayers();
+  const [posList,spData]=await Promise.all([
+    irrApi(`/sessions/${sid}/positions`),
+    irrApi(`/sessions/${sid}/spread`),
+  ]);
+  if(posList&&posList.length>=2) irrRenderTrack(posList);
+  if(spData&&spData.geojson)     irrRenderSpread(spData.geojson,spData.stats);
+  else                           irrShowStats(null);
+}
+
+function irrClearLayers(){
+  if(irrTrackLayer)  irrTrackLayer.clearLayers();
+  if(irrSpreadLayer) irrSpreadLayer.clearLayers();
+}
+
+// ── Track ────────────────────────────────────────────────────────────
+function irrRenderTrack(pts){
+  const lls=pts.map(p=>[p.lat,p.lon]);
+  const poly=L.polyline(lls,{color:'#fff',weight:2,opacity:.7,dashArray:'6 4'}).addTo(irrTrackLayer);
+  // Direction arrows
+  const step=Math.max(1,Math.floor(pts.length/20));
+  for(let i=step;i<pts.length;i+=step){
+    const a=pts[i-step],b=pts[i];
+    const ang=irrBearing([a.lat,a.lon],[b.lat,b.lon]);
+    const mid=[(a.lat+b.lat)/2,(a.lon+b.lon)/2];
+    L.marker(mid,{
+      icon:L.divIcon({html:`<div style="transform:rotate(${ang}deg);color:#fff;font-size:13px;line-height:1">▲</div>`,iconSize:[13,13],className:''}),
+      interactive:false
+    }).addTo(irrTrackLayer);
+  }
+  irrMap.fitBounds(poly.getBounds(),{padding:[40,40]});
+}
+function irrBearing(from,to){
+  const dL=(to[1]-from[1])*Math.PI/180;
+  const la=from[0]*Math.PI/180,lb=to[0]*Math.PI/180;
+  const y=Math.sin(dL)*Math.cos(lb);
+  const x=Math.cos(la)*Math.sin(lb)-Math.sin(la)*Math.cos(lb)*Math.cos(dL);
+  return((Math.atan2(y,x)*180/Math.PI)+360)%360;
+}
+
+// ── Spread polygon ────────────────────────────────────────────────────
+function irrRenderSpread(gj,stats){
+  L.geoJSON(gj,{
+    filter:f=>f.properties.type==='spread',
+    style:{color:'#2e7d32',fillColor:'#4caf50',fillOpacity:.35,weight:1.5},
+  }).bindTooltip(f=>{
+    const p=f.properties;
+    return `Area: ${p.area_ha} ha<br>Volume: ${(p.volume_l/1000).toFixed(1)} m³<br>`
+          +`Rate: ${p.app_rate_l_m2} L/m²<br>Depth: ${p.depth_mm} mm`;
+  }).addTo(irrSpreadLayer);
+  irrShowStats(stats);
+}
+function irrShowStats(s){
+  if(!s){['area','vol','rate','depth','dur'].forEach(k=>document.getElementById('irr-'+k).textContent='—');return;}
+  document.getElementById('irr-area').textContent =`${s.area_ha} ha`;
+  document.getElementById('irr-vol').textContent  =`${(s.volume_l/1000).toFixed(1)} m³`;
+  document.getElementById('irr-rate').textContent =`${s.app_rate_l_m2} L/m²`;
+  document.getElementById('irr-depth').textContent=`${s.depth_mm} mm`;
+  document.getElementById('irr-dur').textContent  =`${s.duration_min} min`;
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────
+async function irrPollAlerts(){
+  const alerts=await irrApi('/alerts');
+  if(!alerts) return;
+  const list=document.getElementById('irr-alerts-list');
+  const cnt =document.getElementById('irr-alert-count');
+  if(irrAlertLayer) irrAlertLayer.clearLayers();
+  if(!alerts.length){
+    list.innerHTML='<span style="color:var(--muted);font-size:0.78rem">No active alerts</span>';
+    cnt.classList.add('irr-hidden'); return;
+  }
+  cnt.textContent=alerts.length; cnt.classList.remove('irr-hidden');
+  list.innerHTML='';
+  alerts.forEach(a=>{
+    if(a.lat&&a.lon&&irrAlertLayer){
+      L.circleMarker([a.lat,a.lon],{radius:10,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.7,weight:2})
+        .bindPopup(`<b>STALL ALERT</b><br>${(a.timestamp||'').slice(0,16).replace('T',' ')}`)
+        .addTo(irrAlertLayer);
+    }
+    const loc=(a.lat&&a.lon)?`${a.lat.toFixed(5)}, ${a.lon.toFixed(5)}`:'Location unknown';
+    const div=document.createElement('div'); div.className='irr-alert-item';
+    div.innerHTML=`<div class="irr-alert-loc">⚠ IRRIGATOR STALLED</div>
+      <div class="irr-alert-time">${(a.timestamp||'').slice(0,16).replace('T',' ')} UTC</div>
+      <div style="font-size:0.7rem;color:var(--muted)">${loc}</div>
+      <button class="irr-btn irr-btn-gray" style="margin-top:4px;font-size:0.72rem;padding:2px 8px" onclick="irrAck(${a.id})">Acknowledge</button>`;
+    list.appendChild(div);
+  });
+}
+async function irrAck(id){ await irrApi(`/alerts/${id}/ack`,{method:'PUT'}); irrPollAlerts(); }
+
+// ── New session modal ─────────────────────────────────────────────────
+document.getElementById('irr-btn-new').addEventListener('click',()=>{
+  document.getElementById('irr-modal').style.display='flex';
+});
+async function irrCreateSession(){
+  const name =document.getElementById('irr-new-name').value||`Run ${new Date().toLocaleDateString()}`;
+  const width=parseFloat(document.getElementById('irr-new-width').value)||30;
+  const flow =parseFloat(document.getElementById('irr-new-flow').value)||833;
+  const ok=await irrApi('/sessions',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,spread_width_m:width,flow_rate_lpm:flow})
+  });
+  if(ok){ document.getElementById('irr-modal').style.display='none'; irrLoadSessions(); }
+}
+document.getElementById('irr-btn-end').addEventListener('click',async()=>{
+  if(!irrActiveSession) return;
+  await irrApi(`/sessions/${irrActiveSession}`,{
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({end_time:new Date().toISOString()})
+  });
+  irrLoadSessions();
+});
+
+// ── API helper ────────────────────────────────────────────────────────
+async function irrApi(path,opts={}){
+  try{
+    const r=await fetch(IRR+path,{credentials:'include',...opts});
+    if(!r.ok) return null;
+    return r.json();
+  }catch(e){ return null; }
+}
+</script>
+</body>
+</html>
