@@ -106,6 +106,71 @@ def live_position():
     return jsonify(row_to_dict(row))
 
 
+@app.post('/api/ingest')
+def ingest():
+    """
+    Direct HTTP ingest endpoint for WiFi-connected bench-test devices (e.g. T3).
+    Accepts JSON matching the LoRa packet fields so the same DB schema is used.
+    {
+      "device_id": 2,
+      "type": 48,        // 0x30=GPS, 0x10=PUMP_ON, 0x11=PUMP_OFF, 0x40=STALL
+      "lat": -45.123456,
+      "lon": 168.123456,
+      "speed": 50,       // cm/s
+      "battery": 85,
+      "pump_on": 1
+    }
+    """
+    data     = request.get_json(force=True, silent=True) or {}
+    msg_type = data.get('type', 0x30)
+    src      = data.get('device_id', 2)
+
+    MSG_GPS   = 0x30
+    MSG_ON    = 0x10
+    MSG_OFF   = 0x11
+    MSG_STALL = 0x40
+
+    now = datetime.datetime.utcnow().isoformat()
+
+    if msg_type == MSG_GPS:
+        session_id = get_active_session_id()
+        conn = get_conn()
+        conn.execute(
+            '''INSERT INTO positions
+               (device_id, timestamp, lat, lon, speed_cms,
+                battery_pct, pump_on, session_id)
+               VALUES (?,?,?,?,?,?,?,?)''',
+            (src, now, data.get('lat'), data.get('lon'),
+             data.get('speed', 0), data.get('battery', 0),
+             data.get('pump_on', 0), session_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True, 'session_id': session_id})
+
+    if msg_type == MSG_ON:
+        session_id = get_active_session_id()
+        if session_id is None:
+            import database as _db
+            session_id = _db.create_session(f"Run {datetime.date.today().isoformat()}")
+        return jsonify({'ok': True, 'session_id': session_id})
+
+    if msg_type == MSG_OFF:
+        return jsonify({'ok': True})
+
+    if msg_type == MSG_STALL:
+        conn = get_conn()
+        conn.execute(
+            'INSERT INTO alerts (device_id, timestamp, alert_type, lat, lon) VALUES (?,?,?,?,?)',
+            (src, now, 'STALL', data.get('lat'), data.get('lon'))
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True})
+
+    return jsonify({'error': 'unknown type'}), 400
+
+
 # ── Spread polygon ────────────────────────────────────────────────────────────
 
 @app.get('/api/sessions/<int:sid>/spread')
