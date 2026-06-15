@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Effluent Irrigator Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>Effluent Irrigator</h1>
+    <div id="live-badge" class="badge badge-gray">No GPS</div>
+  </div>
+
+  <!-- Live stats -->
+  <div class="card" id="live-card">
+    <div class="card-title">Live Status</div>
+    <div class="stat-row"><span>Pump</span>    <span id="stat-pump"  class="val">—</span></div>
+    <div class="stat-row"><span>Speed</span>   <span id="stat-speed" class="val">—</span></div>
+    <div class="stat-row"><span>Battery</span> <span id="stat-batt"  class="val">—</span></div>
+    <div class="stat-row"><span>Last fix</span><span id="stat-time"  class="val">—</span></div>
+  </div>
+
+  <!-- Session selector -->
+  <div class="card">
+    <div class="card-title">Session</div>
+    <select id="session-select"><option value="">— select —</option></select>
+    <button class="btn btn-green" id="btn-new-session" style="margin-top:8px;width:100%">
+      + New Session
+    </button>
+  </div>
+
+  <!-- Session stats (shown when session selected) -->
+  <div class="card hidden" id="spread-card">
+    <div class="card-title">Spread Stats</div>
+    <div class="stat-row"><span>Area</span>         <span id="stat-area"   class="val">—</span></div>
+    <div class="stat-row"><span>Volume</span>        <span id="stat-vol"    class="val">—</span></div>
+    <div class="stat-row"><span>App. rate</span>     <span id="stat-rate"   class="val">—</span></div>
+    <div class="stat-row"><span>Depth</span>         <span id="stat-depth"  class="val">—</span></div>
+    <div class="stat-row"><span>Duration</span>      <span id="stat-dur"    class="val">—</span></div>
+    <div class="stat-row"><span>GPS points</span>    <span id="stat-pts"    class="val">—</span></div>
+    <button class="btn btn-gray" id="btn-end-session" style="margin-top:8px;width:100%">
+      End Session
+    </button>
+  </div>
+
+  <!-- Alerts -->
+  <div class="card" id="alerts-card">
+    <div class="card-title">Alerts <span id="alert-count" class="badge badge-red hidden">0</span></div>
+    <div id="alerts-list"><span class="muted">No active alerts</span></div>
+  </div>
+
+  <!-- Settings -->
+  <details class="card">
+    <summary class="card-title" style="cursor:pointer">Settings</summary>
+    <label>Spread width (m)
+      <input type="number" id="cfg-width" min="1" max="200" step="1" value="30">
+    </label>
+    <label>Flow rate (L/min)
+      <input type="number" id="cfg-flow"  min="1" step="1" value="833">
+    </label>
+    <label>Pushover token
+      <input type="text" id="cfg-po-token" placeholder="app token">
+    </label>
+    <label>Pushover user key
+      <input type="text" id="cfg-po-user"  placeholder="user key">
+    </label>
+    <button class="btn btn-green" id="btn-save-settings" style="margin-top:6px;width:100%">
+      Save Settings
+    </button>
+  </details>
+</div>
+
+<div id="map"></div>
+
+<!-- New session modal -->
+<div id="modal-overlay" class="hidden">
+  <div id="modal">
+    <h2>New Session</h2>
+    <label>Name <input type="text" id="new-name" placeholder="Paddock A — 15 Jun"></label>
+    <label>Spread width (m) <input type="number" id="new-width" value="30" min="1"></label>
+    <label>Flow rate (L/min)  <input type="number" id="new-flow"  value="833" min="1"></label>
+    <div class="modal-buttons">
+      <button class="btn btn-gray"  id="btn-cancel-modal">Cancel</button>
+      <button class="btn btn-green" id="btn-create-session">Create</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/map.js"></script>
+</body>
+</html>

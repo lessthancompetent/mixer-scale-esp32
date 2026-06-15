@@ -1,0 +1,109 @@
+import sqlite3
+import os
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'irrigator.db')
+
+
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def init_db():
+    conn = get_conn()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            name          TEXT,
+            start_time    TEXT NOT NULL,
+            end_time      TEXT,
+            spread_width_m REAL NOT NULL DEFAULT 30.0,
+            flow_rate_lpm  REAL NOT NULL DEFAULT 833.0,
+            notes         TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS positions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id  INTEGER NOT NULL,
+            timestamp  TEXT    NOT NULL,
+            lat        REAL    NOT NULL,
+            lon        REAL    NOT NULL,
+            speed_cms  INTEGER DEFAULT 0,
+            battery_pct INTEGER DEFAULT 0,
+            pump_on    INTEGER DEFAULT 0,
+            session_id INTEGER REFERENCES sessions(id),
+            rssi       INTEGER,
+            snr        REAL
+        );
+
+        CREATE TABLE IF NOT EXISTS alerts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id    INTEGER NOT NULL,
+            timestamp    TEXT    NOT NULL,
+            alert_type   TEXT    NOT NULL,
+            lat          REAL,
+            lon          REAL,
+            acknowledged INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        );
+
+        INSERT OR IGNORE INTO settings VALUES ('spread_width_m', '30.0');
+        INSERT OR IGNORE INTO settings VALUES ('flow_rate_lpm',  '833.0');
+        INSERT OR IGNORE INTO settings VALUES ('pushover_token', '');
+        INSERT OR IGNORE INTO settings VALUES ('pushover_user',  '');
+        INSERT OR IGNORE INTO settings VALUES ('stall_timeout_min', '10');
+
+        CREATE INDEX IF NOT EXISTS idx_pos_session   ON positions(session_id);
+        CREATE INDEX IF NOT EXISTS idx_pos_timestamp ON positions(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_alerts_ack    ON alerts(acknowledged);
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def get_setting(key, default=None):
+    conn = get_conn()
+    row = conn.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+    conn.close()
+    return row['value'] if row else default
+
+
+def set_setting(key, value):
+    conn = get_conn()
+    conn.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+                 (key, str(value)))
+    conn.commit()
+    conn.close()
+
+
+def get_active_session_id():
+    conn = get_conn()
+    row = conn.execute(
+        'SELECT id FROM sessions WHERE end_time IS NULL ORDER BY start_time DESC LIMIT 1'
+    ).fetchone()
+    conn.close()
+    return row['id'] if row else None
+
+
+def create_session(name, spread_width_m=None, flow_rate_lpm=None):
+    import datetime
+    if spread_width_m is None:
+        spread_width_m = float(get_setting('spread_width_m', 30.0))
+    if flow_rate_lpm is None:
+        flow_rate_lpm = float(get_setting('flow_rate_lpm', 833.0))
+    now = datetime.datetime.utcnow().isoformat()
+    conn = get_conn()
+    cur = conn.execute(
+        'INSERT INTO sessions (name, start_time, spread_width_m, flow_rate_lpm) VALUES (?,?,?,?)',
+        (name, now, spread_width_m, flow_rate_lpm)
+    )
+    conn.commit()
+    sid = cur.lastrowid
+    conn.close()
+    return sid
