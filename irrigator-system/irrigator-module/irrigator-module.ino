@@ -28,7 +28,7 @@
 
 #define GPS_RX   34
 #define GPS_TX   12
-#define GPS_BAUD 9600
+#define GPS_BAUD 38400   // NEO-M9N default; change to 9600 if using NEO-6M
 
 #define I2C_SDA  21
 #define I2C_SCL  22
@@ -234,7 +234,7 @@ void sendUBX(uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t len) {
                         (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
   gpsSerial.write(header, 6);
   uint8_t ckA = 0, ckB = 0;
-  for (int i = 2; i < 6; i++) { ckA += header[i]; ckB += ckA; }   // over cls,id,len
+  for (int i = 2; i < 6; i++) { ckA += header[i]; ckB += ckA; }
   for (uint16_t i = 0; i < len; i++) {
     gpsSerial.write(payload[i]);
     ckA += payload[i]; ckB += ckA;
@@ -244,17 +244,39 @@ void sendUBX(uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t len) {
   gpsSerial.flush();
 }
 
-// Enable SBAS so the receiver applies differential corrections (SouthPAN in
-// NZ/AU) for sub-metre accuracy. Re-sent every boot since NEO-6M config is
-// volatile. UBX-CFG-SBAS payload:
-//   mode    = 0x03  enabled + accept testbed sats (SouthPAN early service)
-//   usage   = 0x03  use for ranging + differential corrections
-//   maxSBAS = 0x03  up to 3 SBAS search channels
-//   scanmode= 0     auto-scan all PRNs (finds SouthPAN automatically)
+// Configure the NEO-M9N via UBX-CFG-VALSET (class 0x06 ID 0x8A).
+// Uses RAM layer (re-sent each boot since config is volatile).
+// Keys are 4-byte little-endian; all SBAS values are 1-byte boolean (type L).
+//
+//  CFG-SIGNAL-SBAS_ENA  0x10310020  enable SBAS signal decoder
+//  CFG-SBAS-USE_RANGING 0x10360010  use SBAS sats for ranging
+//  CFG-SBAS-USE_DIFFCORR 0x10360011 apply differential corrections (SouthPAN)
+//
+// Scanmode left at default 0x00 = auto-scan all PRNs, so SouthPAN is found
+// automatically without needing to hardcode PRN numbers.
 void enableSBAS() {
-  const uint8_t cfgSbas[8] = { 0x03, 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00 };
-  sendUBX(0x06, 0x16, cfgSbas, sizeof(cfgSbas));
-  Serial.println("[GPS] SBAS enabled (auto-scan, range + diff corrections)");
+  const uint8_t payload[] = {
+    0x00,              // version
+    0x01,              // layers: RAM
+    0x00, 0x00,        // reserved
+    // CFG-SIGNAL-SBAS_ENA
+    0x20, 0x00, 0x31, 0x10,  0x01,
+    // CFG-SBAS-USE_RANGING
+    0x10, 0x00, 0x36, 0x10,  0x01,
+    // CFG-SBAS-USE_DIFFCORR
+    0x11, 0x00, 0x36, 0x10,  0x01,
+  };
+  sendUBX(0x06, 0x8A, payload, sizeof(payload));
+  Serial.println("[GPS] SBAS enabled (M9N CFG-VALSET: ranging + diff, auto-scan)");
+}
+
+// Put the M9N into Power Save Mode (cyclic tracking) to cut GPS draw from
+// ~20 mA to ~5 mA average. At 30s GPS transmit intervals this is fine.
+// UBX-CFG-PMS: power setup value 1 = balanced / cyclic tracking (PSMOO 1Hz).
+void enablePowerSave() {
+  const uint8_t payload[] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+  sendUBX(0x06, 0x86, payload, sizeof(payload));
+  Serial.println("[GPS] Power save mode enabled (cyclic tracking ~5mA avg)");
 }
 
 // ── PMIC init ─────────────────────────────────────────────────────────────────
@@ -285,8 +307,9 @@ void setup() {
   delay(500); // Let power rails stabilise
 
   gpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX, GPS_TX);
-  delay(250);            // let the GPS UART settle before configuring
+  delay(500);            // let GPS UART and boot ROM settle before configuring
   enableSBAS();
+  enablePowerSave();
   Serial.println("[GPS] UART started, waiting for fix...");
 
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
