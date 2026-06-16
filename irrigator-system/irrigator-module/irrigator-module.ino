@@ -5,8 +5,12 @@
 // Behaviour:
 //  - Listens for PUMP_ON/PUMP_OFF from pump module
 //  - Transmits GPS position every 30s while moving, 5min when idle
-//  - Detects stall (pump on, no movement for STALL_TIMEOUT) and sends alert
-//  - Repeats stall alert every 2min until pump off or movement resumes
+//  - 15min grace after pump-on, then if it moves <1m in a 5min window while
+//    the pump is on it is treated as stalled
+//  - On stall: sends a stall alert AND a PUMP_CUTOFF command to the pump
+//    module, repeated every 1min while stalled
+//  - The pump module pulses its relay once to drop the contactor; restart is
+//    manual (no auto-resume)
 
 #include <SPI.h>
 #include <Wire.h>
@@ -47,16 +51,17 @@
 #define MSG_HEARTBEAT       0x20
 #define MSG_GPS_POSITION    0x30
 #define MSG_ALERT_STALL     0x40
+#define MSG_PUMP_CUTOFF     0x50   // To pump module: payload 1=cut
 
 // ── Timing ───────────────────────────────────────────────────────────────────
 #define GPS_TX_MOVING_MS    30000UL   // 30s between GPS packets while moving
 #define GPS_TX_IDLE_MS      300000UL  // 5min between GPS packets while stopped
-#define STALL_TIMEOUT_MS    600000UL  // 10min pump-on + no movement = stall
-#define STALL_REPEAT_MS     120000UL  // Repeat alert every 2min
+#define STALL_TIMEOUT_MS    900000UL  // 15min pump-on grace before any cutoff
+#define STALL_REPEAT_MS     60000UL   // Repeat alert + cutoff command every 1min
 #define SNAPSHOT_INTERVAL   30000UL   // Record position snapshot every 30s
 #define HEARTBEAT_INTERVAL  300000UL  // Heartbeat every 5min
-#define MOVEMENT_WINDOW_MS  120000UL  // Movement check window (2min)
-#define MOVEMENT_THRESH_M   10.0      // < 10m in window = not moving
+#define MOVEMENT_WINDOW_MS  300000UL  // Movement check window (5min)
+#define MOVEMENT_THRESH_M   1.0       // < 1m in 5min window = not moving (stalled)
 
 // ── State ─────────────────────────────────────────────────────────────────────
 AXP20X_Class pmic;
@@ -149,6 +154,17 @@ void sendAlert(uint8_t alertType) {
   }
   LoRa.endPacket();
   Serial.printf("[ALERT TX] type=0x%02X\n", alertType);
+}
+
+// Command the pump module to cut the pump (payload 1). The pump module pulses
+// its cutoff relay once; restart is manual, so we never send a "resume".
+void sendCutoff() {
+  LoRa.beginPacket();
+  LoRa.write(DEVICE_ID_IRRIGATOR);
+  LoRa.write(MSG_PUMP_CUTOFF);
+  LoRa.write((uint8_t)1);
+  LoRa.endPacket();
+  Serial.println("[CUTOFF TX] pump cutoff command sent");
 }
 
 // ── LoRa RX ──────────────────────────────────────────────────────────────────
@@ -265,14 +281,16 @@ void loop() {
   // ── Stall detection (only while pump is on) ──────────────────────────────
   if (pumpOn) {
     unsigned long pumpAge = now - pumpOnTime;
+    // 15min grace after pump-on before any cutoff can be initiated
     if (pumpAge >= STALL_TIMEOUT_MS && !isMoving()) {
       if (!stalled) {
         stalled = true;
-        Serial.println("[ALERT] Stall detected!");
+        Serial.println("[ALERT] Stall detected — commanding pump cutoff");
       }
       if (now - lastAlert >= STALL_REPEAT_MS) {
         lastAlert = now;
         sendAlert(MSG_ALERT_STALL);
+        sendCutoff();   // tell pump module to stop the pump
         // Flash LED to indicate alert
         for (int i = 0; i < 3; i++) {
           digitalWrite(LED_PIN, HIGH); delay(100);
@@ -280,7 +298,8 @@ void loop() {
         }
       }
     } else if (stalled && isMoving()) {
-      // Recovered — movement resumed
+      // Movement resumed — stop commanding cutoff. The pump itself stays off
+      // and must be restarted manually; we just re-arm stall detection here.
       stalled = false;
       Serial.println("[INFO] Movement resumed, stall cleared");
     }
