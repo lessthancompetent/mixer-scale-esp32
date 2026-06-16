@@ -26,6 +26,7 @@
 #define MSG_HEARTBEAT     0x20
 #define MSG_GPS_POSITION  0x30
 #define MSG_ALERT_STALL   0x40
+#define MSG_PUMP_CUTOFF   0x50
 
 // ── Packet parsers ─────────────────────────────────────────────────────────
 void parseGpsPacket(uint8_t *buf, int len, int rssi, float snr) {
@@ -117,7 +118,8 @@ void loop() {
 
   if (msgType == MSG_GPS_POSITION && srcId == 0x02) {
     parseGpsPacket(payload, payloadLen, rssi, snr);
-  } else if (msgType == MSG_ALERT_STALL) {
+  } else if (msgType == MSG_ALERT_STALL || msgType == MSG_PUMP_CUTOFF) {
+    // Both carry an optional lat/lon payload in the same layout
     parseAlertPacket(srcId, msgType, payload, payloadLen, rssi, snr);
   } else if (msgType == MSG_PUMP_ON || msgType == MSG_PUMP_OFF ||
              msgType == MSG_HEARTBEAT) {

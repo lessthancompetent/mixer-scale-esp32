@@ -111,10 +111,9 @@ void checkIncoming() {
 
   uint8_t srcId   = LoRa.read();
   uint8_t msgType = LoRa.read();
-  uint8_t payload = LoRa.available() ? LoRa.read() : 0;
-  while (LoRa.available()) LoRa.read();
+  while (LoRa.available()) LoRa.read();   // drain any GPS payload
 
-  if (srcId == DEVICE_ID_IRRIGATOR && msgType == MSG_PUMP_CUTOFF && payload == 1) {
+  if (srcId == DEVICE_ID_IRRIGATOR && msgType == MSG_PUMP_CUTOFF) {
     if (!cutLatched) pulseCutoff();   // one pulse per stall; ignore refreshes
   }
 }

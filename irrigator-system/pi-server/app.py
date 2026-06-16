@@ -163,10 +163,11 @@ def ingest():
     msg_type = data.get('type', 0x30)
     src      = data.get('device_id', 2)
 
-    MSG_GPS   = 0x30
-    MSG_ON    = 0x10
-    MSG_OFF   = 0x11
-    MSG_STALL = 0x40
+    MSG_GPS    = 0x30
+    MSG_ON     = 0x10
+    MSG_OFF    = 0x11
+    MSG_STALL  = 0x40
+    MSG_CUTOFF = 0x50
 
     now = datetime.datetime.utcnow().isoformat()
 
@@ -193,15 +194,16 @@ def ingest():
     if msg_type == MSG_OFF:
         return jsonify({'ok': True})
 
-    if msg_type == MSG_STALL:
+    if msg_type in (MSG_STALL, MSG_CUTOFF):
+        alert_type = 'KICKOUT' if msg_type == MSG_CUTOFF else 'STALL'
         conn = get_conn()
         conn.execute(
             'INSERT INTO alerts (device_id, timestamp, alert_type, lat, lon) VALUES (?,?,?,?,?)',
-            (src, now, 'STALL', data.get('lat'), data.get('lon'))
+            (src, now, alert_type, data.get('lat'), data.get('lon'))
         )
         conn.commit()
         conn.close()
-        return jsonify({'ok': True})
+        return jsonify({'ok': True, 'alert': alert_type})
 
     return jsonify({'error': 'unknown type'}), 400
 

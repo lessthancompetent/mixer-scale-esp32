@@ -156,13 +156,21 @@ void sendAlert(uint8_t alertType) {
   Serial.printf("[ALERT TX] type=0x%02X\n", alertType);
 }
 
-// Command the pump module to cut the pump (payload 1). The pump module pulses
-// its cutoff relay once; restart is manual, so we never send a "resume".
+// Command the pump module to cut the pump. The pump module pulses its cutoff
+// relay once; restart is manual, so we never send a "resume". Carries the
+// current GPS fix so the bridge/UI can mark where the kickout happened.
 void sendCutoff() {
   LoRa.beginPacket();
   LoRa.write(DEVICE_ID_IRRIGATOR);
   LoRa.write(MSG_PUMP_CUTOFF);
-  LoRa.write((uint8_t)1);
+  if (gps.location.isValid()) {
+    int32_t iLat = (int32_t)(gps.location.lat() * 1e6);
+    int32_t iLon = (int32_t)(gps.location.lng() * 1e6);
+    LoRa.write((iLat >> 24) & 0xFF); LoRa.write((iLat >> 16) & 0xFF);
+    LoRa.write((iLat >> 8)  & 0xFF); LoRa.write( iLat        & 0xFF);
+    LoRa.write((iLon >> 24) & 0xFF); LoRa.write((iLon >> 16) & 0xFF);
+    LoRa.write((iLon >> 8)  & 0xFF); LoRa.write( iLon        & 0xFF);
+  }
   LoRa.endPacket();
   Serial.println("[CUTOFF TX] pump cutoff command sent");
 }

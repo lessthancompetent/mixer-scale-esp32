@@ -25,6 +25,7 @@ MSG_PUMP_OFF     = 0x11
 MSG_HEARTBEAT    = 0x20
 MSG_GPS_POSITION = 0x30
 MSG_ALERT_STALL  = 0x40
+MSG_PUMP_CUTOFF  = 0x50
 
 
 def now_iso():
@@ -82,7 +83,13 @@ def handle_pump_off():
 
 
 def handle_alert(pkt):
-    alert_type = 'STALL' if pkt.get('type') == MSG_ALERT_STALL else 'UNKNOWN'
+    msg_type = pkt.get('type')
+    if msg_type == MSG_PUMP_CUTOFF:
+        alert_type = 'KICKOUT'
+    elif msg_type == MSG_ALERT_STALL:
+        alert_type = 'STALL'
+    else:
+        alert_type = 'UNKNOWN'
     lat = pkt.get('lat')
     lon = pkt.get('lon')
 
@@ -96,11 +103,19 @@ def handle_alert(pkt):
 
     loc = f"{lat:.5f}, {lon:.5f}" if lat is not None else "unknown location"
     print(f"[ALERT] {alert_type} at {loc}")
-    send_pushover(
-        "Irrigator Stall Alert",
-        f"Irrigator has not moved for 10+ minutes while pump is running.\nLocation: {loc}",
-        priority=1
-    )
+    if alert_type == 'KICKOUT':
+        send_pushover(
+            "Irrigator Pump Kicked Out",
+            f"Automatic cutoff stopped the pump — irrigator stalled.\n"
+            f"Pump must be restarted manually.\nLocation: {loc}",
+            priority=1
+        )
+    else:
+        send_pushover(
+            "Irrigator Stall Alert",
+            f"Irrigator has not moved while the pump is running.\nLocation: {loc}",
+            priority=1
+        )
 
 
 def dispatch(pkt):
@@ -111,7 +126,7 @@ def dispatch(pkt):
         handle_pump_on()
     elif msg_type == MSG_PUMP_OFF:
         handle_pump_off()
-    elif msg_type == MSG_ALERT_STALL:
+    elif msg_type == MSG_ALERT_STALL or msg_type == MSG_PUMP_CUTOFF:
         handle_alert(pkt)
     elif msg_type == MSG_HEARTBEAT:
         print(f"[HB] src={pkt.get('src')} pump={pkt.get('payload')} RSSI={pkt.get('rssi')}")

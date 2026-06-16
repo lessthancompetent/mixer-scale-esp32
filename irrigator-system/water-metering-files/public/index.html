@@ -1264,15 +1264,30 @@ async function irrPollAlerts(){
   cnt.textContent=alerts.length; cnt.classList.remove('irr-hidden');
   list.innerHTML='';
   alerts.forEach(a=>{
+    const isKick = (a.alert_type==='KICKOUT');
+    const when   = (a.timestamp||'').slice(0,16).replace('T',' ');
     if(a.lat&&a.lon&&irrAlertLayer){
-      L.circleMarker([a.lat,a.lon],{radius:10,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.7,weight:2})
-        .bindPopup(`<b>STALL ALERT</b><br>${(a.timestamp||'').slice(0,16).replace('T',' ')}`)
-        .addTo(irrAlertLayer);
+      if(isKick){
+        // Distinct kickout marker: black-ringed red octagon ("pump stopped")
+        L.marker([a.lat,a.lon],{icon:L.divIcon({
+          className:'',
+          html:'<div style="font-size:20px;line-height:20px;filter:drop-shadow(0 0 2px #000)">&#128721;</div>',
+          iconSize:[20,20],iconAnchor:[10,10]})})
+          .bindPopup(`<b>PUMP KICKED OUT</b><br>Auto cutoff — restart manually<br>${when}`)
+          .addTo(irrAlertLayer);
+      } else {
+        L.circleMarker([a.lat,a.lon],{radius:10,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.7,weight:2})
+          .bindPopup(`<b>STALL ALERT</b><br>${when}`)
+          .addTo(irrAlertLayer);
+      }
     }
     const loc=(a.lat&&a.lon)?`${a.lat.toFixed(5)}, ${a.lon.toFixed(5)}`:'Location unknown';
     const div=document.createElement('div'); div.className='irr-alert-item';
-    div.innerHTML=`<div class="irr-alert-loc">&#9888; IRRIGATOR STALLED</div>
-      <div class="irr-alert-time">${(a.timestamp||'').slice(0,16).replace('T',' ')} UTC</div>
+    const title = isKick
+      ? '<div class="irr-alert-loc" style="color:#b91c1c">&#128721; PUMP KICKED OUT (auto cutoff)</div>'
+      : '<div class="irr-alert-loc">&#9888; IRRIGATOR STALLED</div>';
+    div.innerHTML=`${title}
+      <div class="irr-alert-time">${when} UTC</div>
       <div style="font-size:0.7rem;color:var(--muted)">${loc}</div>
       <button class="irr-btn irr-btn-gray" style="margin-top:4px;font-size:0.72rem;padding:2px 8px" onclick="irrAck(${a.id})">Acknowledge</button>`;
     list.appendChild(div);
