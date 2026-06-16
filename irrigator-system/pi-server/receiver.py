@@ -55,8 +55,8 @@ def handle_gps(pkt):
     conn.execute(
         '''INSERT INTO positions
            (device_id, timestamp, lat, lon, speed_cms, battery_pct,
-            pump_on, session_id, rssi, snr)
-           VALUES (?,?,?,?,?,?,?,?,?,?)''',
+            pump_on, session_id, rssi, snr, battery_soh)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
         (pkt.get('src', 2), now_iso(),
          pkt['lat'], pkt['lon'],
          pkt.get('speed', 0),
@@ -64,7 +64,8 @@ def handle_gps(pkt):
          pkt.get('pump_on', 0),
          session_id,
          pkt.get('rssi', 0),
-         pkt.get('snr', 0.0))
+         pkt.get('snr', 0.0),
+         pkt.get('batt_soh', 0))
     )
     conn.commit()
     conn.close()

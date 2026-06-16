@@ -1080,7 +1080,16 @@ async function irrPollLive(){
   document.getElementById('irr-pump').textContent =pumpOn?'ON':'OFF';
   document.getElementById('irr-pump').style.color =pumpOn?'#22c55e':'#ef4444';
   document.getElementById('irr-speed').textContent=spd+' m/s';
-  document.getElementById('irr-batt').textContent =pos.battery_pct+'%';
+  const soh=pos.battery_soh;
+  let battTxt=pos.battery_pct+'%';
+  if(soh&&soh>0){
+    battTxt+=` (health ${soh}%)`;
+  }
+  const battEl=document.getElementById('irr-batt');
+  battEl.textContent=battTxt;
+  // Colour-code on charge level; flag degraded health
+  const lowSoc=pos.battery_pct<=20, lowSoh=(soh&&soh>0&&soh<70);
+  battEl.style.color=(lowSoc||lowSoh)?'#ef4444':(pos.battery_pct<=40?'#f59e0b':'');
   document.getElementById('irr-time').textContent =
     pos.timestamp ? new Date(pos.timestamp+'Z').toLocaleTimeString() : '—';
   const badge=document.getElementById('irr-live-badge');

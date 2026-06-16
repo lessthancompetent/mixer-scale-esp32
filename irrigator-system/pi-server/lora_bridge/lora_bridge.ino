@@ -40,14 +40,15 @@ void parseGpsPacket(uint8_t *buf, int len, int rssi, float snr) {
   uint8_t batt    = buf[10];
   uint8_t pump_on = buf[11];
 
-  StaticJsonDocument<128> doc;
+  StaticJsonDocument<160> doc;
   doc["src"]     = 2;
   doc["type"]    = MSG_GPS_POSITION;
   doc["lat"]     = iLat / 1e6;
   doc["lon"]     = iLon / 1e6;
   doc["speed"]   = iSpd;          // cm/s
-  doc["battery"] = batt;
+  doc["battery"] = batt;          // State of Charge %
   doc["pump_on"] = pump_on;
+  if (len >= 13) doc["batt_soh"] = buf[12];   // State of Health % (S3 module)
   doc["rssi"]    = rssi;
   doc["snr"]     = snr;
   serializeJson(doc, Serial);

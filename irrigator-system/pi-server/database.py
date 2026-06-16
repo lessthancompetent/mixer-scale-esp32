@@ -35,7 +35,8 @@ def init_db():
             pump_on    INTEGER DEFAULT 0,
             session_id INTEGER REFERENCES sessions(id),
             rssi       INTEGER,
-            snr        REAL
+            snr        REAL,
+            battery_soh INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS alerts (
@@ -64,6 +65,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_pos_timestamp ON positions(timestamp);
         CREATE INDEX IF NOT EXISTS idx_alerts_ack    ON alerts(acknowledged);
     ''')
+    # Migration: add battery_soh to pre-existing positions tables
+    cols = [r['name'] for r in conn.execute("PRAGMA table_info(positions)").fetchall()]
+    if 'battery_soh' not in cols:
+        conn.execute('ALTER TABLE positions ADD COLUMN battery_soh INTEGER DEFAULT 0')
     conn.commit()
     conn.close()
 

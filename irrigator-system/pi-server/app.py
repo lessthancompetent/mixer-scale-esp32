@@ -177,11 +177,11 @@ def ingest():
         conn.execute(
             '''INSERT INTO positions
                (device_id, timestamp, lat, lon, speed_cms,
-                battery_pct, pump_on, session_id)
-               VALUES (?,?,?,?,?,?,?,?)''',
+                battery_pct, pump_on, session_id, battery_soh)
+               VALUES (?,?,?,?,?,?,?,?,?)''',
             (src, now, data.get('lat'), data.get('lon'),
              data.get('speed', 0), data.get('battery', 0),
-             data.get('pump_on', 0), session_id)
+             data.get('pump_on', 0), session_id, data.get('batt_soh', 0))
         )
         conn.commit()
         conn.close()
