@@ -1193,18 +1193,28 @@ function irrBearing(from,to){
   return((Math.atan2(y,x)*180/Math.PI)+360)%360;
 }
 
-// ── Depth zone colour scale (zone 0=outermost/shallow → zone 4=innermost/deep)
-const DEPTH_ZONE_COLORS=['#b3e5fc','#4fc3f7','#0288d1','#01579b','#002171'];
+// ── Depth colour scale (shallow → deep). The annular spray peaks at the 6 m
+//    inner edge, so colour is mapped by depth VALUE not by ring index.
+const DEPTH_ZONE_COLORS=['#e1f5fe','#b3e5fc','#4fc3f7','#0288d1','#01579b','#002171'];
+function irrDepthColor(depth,maxDepth){
+  if(!maxDepth||depth<=0) return DEPTH_ZONE_COLORS[0];
+  const n=DEPTH_ZONE_COLORS.length;
+  const idx=Math.min(n-1,Math.floor((depth/maxDepth)*n));
+  return DEPTH_ZONE_COLORS[idx];
+}
 
 // ── Spread polygon (selected session — depth gradient) ────────────────
 function irrRenderSpread(gj,stats){
-  // Depth zones
-  L.geoJSON(gj,{
-    filter:f=>f.properties.type==='depth_zone',
-    style:f=>{
-      const c=DEPTH_ZONE_COLORS[f.properties.zone]||'#0288d1';
-      return {color:'none',fillColor:c,fillOpacity:0.75,weight:0};
-    },
+  const maxDepth=(stats&&stats.max_depth_mm)||1;
+  // Depth zones — draw deepest last so peak band sits on top
+  const zoneFeatures=gj.features.filter(f=>f.properties.type==='depth_zone')
+    .sort((a,b)=>a.properties.depth_mm-b.properties.depth_mm);
+  L.geoJSON({type:'FeatureCollection',features:zoneFeatures},{
+    style:f=>({
+      color:'none',
+      fillColor:irrDepthColor(f.properties.depth_mm,maxDepth),
+      fillOpacity:0.75,weight:0,
+    }),
   }).bindTooltip(f=>`~${f.properties.depth_mm} mm depth`)
   .addTo(irrSpreadLayer);
 
@@ -1234,7 +1244,7 @@ function irrUpdateDepthLegend(s){
   html+='<div style="display:flex;gap:2px;align-items:center">';
   for(let i=0;i<steps;i++){
     const d=((max/steps)*(i+0.5)).toFixed(1);
-    html+=`<div style="background:${DEPTH_ZONE_COLORS[i]};width:22px;height:12px;border-radius:2px" title="${d} mm"></div>`;
+    html+=`<div style="background:${DEPTH_ZONE_COLORS[i]};width:18px;height:12px;border-radius:2px" title="${d} mm"></div>`;
   }
   html+=`</div><div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted)"><span>0</span><span>${max} mm</span></div>`;
   el.innerHTML=html;

@@ -119,7 +119,8 @@ def all_spreads():
         result = calculate_spread(
             [dict(r) for r in rows],
             spread_width_m = session['spread_width_m'],
-            flow_rate_lpm  = session['flow_rate_lpm']
+            flow_rate_lpm  = session['flow_rate_lpm'],
+            spread_inner_m = float(get_setting('spread_inner_m', 6.0))
         )
         if result:
             results.append({
@@ -228,7 +229,8 @@ def session_spread(sid):
     result = calculate_spread(
         positions,
         spread_width_m = session['spread_width_m'],
-        flow_rate_lpm  = session['flow_rate_lpm']
+        flow_rate_lpm  = session['flow_rate_lpm'],
+        spread_inner_m = float(get_setting('spread_inner_m', 6.0))
     )
     if result is None:
         return jsonify({'error': 'Calculation failed'}), 500
