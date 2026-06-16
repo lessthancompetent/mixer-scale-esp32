@@ -15,7 +15,7 @@ import datetime
 import requests
 import serial
 from database import (get_conn, init_db, get_setting,
-                       get_active_session_id, get_or_create_today_session)
+                       get_or_create_today_session)
 
 SERIAL_PORT  = '/dev/ttyUSB0'
 BAUD_RATE    = 115200
@@ -49,7 +49,7 @@ def send_pushover(title, message, priority=1):
 
 
 def handle_gps(pkt):
-    session_id = get_active_session_id()
+    session_id = get_or_create_today_session()
     conn = get_conn()
     conn.execute(
         '''INSERT INTO positions

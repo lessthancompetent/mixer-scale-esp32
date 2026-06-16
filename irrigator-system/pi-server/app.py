@@ -9,8 +9,7 @@ import json
 import datetime
 from flask import Flask, jsonify, request, render_template, abort
 from database import (get_conn, init_db, get_setting, set_setting,
-                       create_session, get_active_session_id,
-                       get_or_create_today_session)
+                       create_session, get_or_create_today_session)
 from spread_calc import calculate_spread
 
 app = Flask(__name__)
@@ -171,7 +170,7 @@ def ingest():
     now = datetime.datetime.utcnow().isoformat()
 
     if msg_type == MSG_GPS:
-        session_id = get_active_session_id()
+        session_id = get_or_create_today_session()
         conn = get_conn()
         conn.execute(
             '''INSERT INTO positions
