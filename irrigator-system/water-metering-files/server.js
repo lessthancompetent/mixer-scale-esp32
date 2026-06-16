@@ -206,6 +206,22 @@ mqttClient.on('connect', () => {
   });
 });
 
+// Forward decoded irrigator data to Flask ingest endpoint
+function postToFlask(payload) {
+  const body = JSON.stringify(payload);
+  const req = require('http').request({
+    hostname: '127.0.0.1', port: 5000, path: '/api/ingest',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+  });
+  req.on('error', err => console.error('[IRRIGATOR→FLASK]', err.message));
+  req.write(body);
+  req.end();
+}
+
+// Irrigator message types (0x10+ range, distinct from VAT tap 0x00-0x09)
+const IRR_TYPES = new Set([0x10, 0x11, 0x20, 0x30, 0x40]);
+
 mqttClient.on('message', (_topic, message) => {
   try {
     const body     = JSON.parse(message.toString());
@@ -214,6 +230,30 @@ mqttClient.on('message', (_topic, message) => {
     const fPort    = body?.fPort || 1;
     if (!rawB64) return;
     const buf = Buffer.from(rawB64, 'base64');
+
+    // Irrigator / T3 LoRaWAN packet (type byte ≥ 0x10)
+    if (buf.length >= 2 && IRR_TYPES.has(buf[1])) {
+      const msgType  = buf[1];
+      const srcId    = buf[0];
+      if (msgType === 0x30 && buf.length >= 14) {
+        const lat    = buf.readInt32BE(2)  / 1e6;
+        const lon    = buf.readInt32BE(6)  / 1e6;
+        const speed  = buf.readInt16BE(10);
+        const batt   = buf[12];
+        const pumpOn = buf[13];
+        postToFlask({ device_id: srcId, type: 0x30, lat, lon, speed, battery: batt, pump_on: pumpOn });
+        console.log(`[IRR ${deviceId}] GPS ${lat.toFixed(5)},${lon.toFixed(5)} spd=${speed}cm/s pump=${pumpOn}`);
+      } else if (msgType === 0x10 || msgType === 0x11) {
+        postToFlask({ device_id: srcId, type: msgType });
+        console.log(`[IRR ${deviceId}] PUMP ${msgType === 0x10 ? 'ON' : 'OFF'}`);
+      } else if (msgType === 0x40 && buf.length >= 10) {
+        const lat = buf.readInt32BE(2) / 1e6;
+        const lon = buf.readInt32BE(6) / 1e6;
+        postToFlask({ device_id: srcId, type: 0x40, lat, lon });
+        console.log(`[IRR ${deviceId}] STALL at ${lat.toFixed(5)},${lon.toFixed(5)}`);
+      }
+      return;
+    }
 
     if (fPort === 2) {
       if (buf.length < 9) return;
