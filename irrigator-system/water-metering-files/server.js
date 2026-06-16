@@ -268,13 +268,26 @@ mqttClient.on('error', err => console.error('MQTT error:', err));
 // ─── Express ────────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 app.use(session({
   secret: SECRET, resave: false, saveUninitialized: false,
   cookie: { secure: false, maxAge: 8 * 60 * 60 * 1000 },
 }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Irrigator proxy must be registered BEFORE express.json() so the request
+// body stream is forwarded intact to Flask (body parsers consume the stream).
+app.use('/irrigator-api', requireAuth, createProxyMiddleware({
+  target: 'http://127.0.0.1:5000',
+  changeOrigin: true,
+  pathRewrite: { '^/': '/api/' },
+  on: {
+    error: (_err, _req, res) =>
+      res.status(502).json({ error: 'Irrigator server unavailable — is Flask running on port 5000?' }),
+  },
+}));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 function requireAuth(req, res, next) {
   if (req.session && req.session.userId) return next();
@@ -451,19 +464,6 @@ app.post('/api/water/report', requireAuth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ─── Irrigator proxy ─────────────────────────────────────────────────────────
-// Flask server (irrigator-system/pi-server/app.py) runs on port 5000.
-// All calls to /irrigator-api/* are forwarded to Flask /api/* behind MVMS auth.
-app.use('/irrigator-api', requireAuth, createProxyMiddleware({
-  target: 'http://127.0.0.1:5000',
-  changeOrigin: true,
-  pathRewrite: { '^/': '/api/' },
-  on: {
-    error: (_err, _req, res) =>
-      res.status(502).json({ error: 'Irrigator server unavailable — is Flask running on port 5000?' }),
-  },
-}));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
