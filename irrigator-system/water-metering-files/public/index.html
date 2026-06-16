@@ -470,7 +470,6 @@
           <div class="irr-card">
             <div class="irr-section-title">Session</div>
             <select id="irr-session-sel" class="irr-select"><option value="">— select —</option></select>
-            <button class="irr-btn irr-btn-green" id="irr-btn-new" style="width:100%;margin-top:7px">+ New Session</button>
           </div>
 
           <!-- Spread stats -->
@@ -481,7 +480,6 @@
             <div class="irr-stat"><span>Rate</span>      <span id="irr-rate">—</span></div>
             <div class="irr-stat"><span>Depth</span>     <span id="irr-depth">—</span></div>
             <div class="irr-stat"><span>Duration</span>  <span id="irr-dur">—</span></div>
-            <button class="irr-btn irr-btn-gray" id="irr-btn-end" style="width:100%;margin-top:7px">End Session</button>
           </div>
 
           <!-- Alerts -->
@@ -503,20 +501,6 @@
 </div>
 
 <div id="irr-toast"></div>
-
-<!-- Irrigator new-session modal -->
-<div id="irr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
-  <div style="background:#1a1d27;border:1px solid #2a2d3d;border-radius:10px;padding:22px;width:300px">
-    <h2 style="font-size:1rem;margin-bottom:14px">New Irrigator Session</h2>
-    <label>Name<input type="text"   id="irr-new-name"  style="display:block;width:100%;margin:4px 0 10px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px" placeholder="Paddock A"></label>
-    <label>Spread width (m)<input type="number" id="irr-new-width" value="30" style="display:block;width:100%;margin:4px 0 10px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px"></label>
-    <label>Flow rate (L/min)<input type="number" id="irr-new-flow"  value="833" style="display:block;width:100%;margin:4px 0 14px;background:#0f1117;border:1px solid #2a2d3d;color:#e2e4ef;padding:6px 8px;border-radius:6px"></label>
-    <div style="display:flex;gap:8px">
-      <button class="irr-btn irr-btn-gray"  onclick="document.getElementById('irr-modal').style.display='none'" style="flex:1">Cancel</button>
-      <button class="irr-btn irr-btn-green" onclick="irrCreateSession()" style="flex:1">Create</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // ──────────────────────────────────────────────────────────────────────
@@ -1140,14 +1124,24 @@ async function irrLoadSessions(){
   const list=await irrApi('/sessions');
   if(!list) return;
   const sel=document.getElementById('irr-session-sel');
-  sel.innerHTML='<option value="">— select session —</option>';
+  const today=new Date().toISOString().slice(0,10);
+  sel.innerHTML='<option value="">— all sessions —</option>';
+  let todayId=null;
   list.forEach(s=>{
     const o=document.createElement('option');
     o.value=s.id;
     const dt=s.start_time?s.start_time.slice(0,10):'';
-    o.text=(s.end_time===null?'▶ ':'')+`${s.name||'Session '+s.id} (${dt}) · ${s.point_count??0} pts`;
+    o.text=`${s.name||'Session '+s.id} (${dt}) · ${s.point_count??0} pts`;
     sel.appendChild(o);
+    if(dt===today && !todayId) todayId=s.id;
   });
+  // Auto-select today's session
+  if(todayId && !irrActiveSession){
+    sel.value=todayId;
+    irrActiveSession=todayId;
+    document.getElementById('irr-spread-card').classList.remove('irr-hidden');
+    irrLoadSessionData(todayId);
+  }
 }
 document.getElementById('irr-session-sel').addEventListener('change',e=>{
   const id=parseInt(e.target.value);
@@ -1249,35 +1243,6 @@ async function irrPollAlerts(){
   });
 }
 async function irrAck(id){ await irrApi(`/alerts/${id}/ack`,{method:'PUT'}); irrPollAlerts(); }
-
-// ── New session modal ─────────────────────────────────────────────────
-document.getElementById('irr-btn-new').addEventListener('click',()=>{
-  document.getElementById('irr-modal').style.display='flex';
-});
-async function irrCreateSession(){
-  const name =document.getElementById('irr-new-name').value||`Run ${new Date().toLocaleDateString()}`;
-  const width=parseFloat(document.getElementById('irr-new-width').value)||30;
-  const flow =parseFloat(document.getElementById('irr-new-flow').value)||833;
-  const ok=await irrApi('/sessions',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,spread_width_m:width,flow_rate_lpm:flow})
-  });
-  if(ok){
-    document.getElementById('irr-modal').style.display='none';
-    irrLoadSessions();
-    irrLoadAllSpreads();
-  } else {
-    irrShowToast('Could not create session — is the irrigator server running?');
-  }
-}
-document.getElementById('irr-btn-end').addEventListener('click',async()=>{
-  if(!irrActiveSession) return;
-  await irrApi(`/sessions/${irrActiveSession}`,{
-    method:'PUT',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({end_time:new Date().toISOString()})
-  });
-  irrLoadSessions();
-});
 
 // ── API helper ────────────────────────────────────────────────────────
 async function irrApi(path,opts={}){
