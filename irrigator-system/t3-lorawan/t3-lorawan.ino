@@ -42,6 +42,8 @@ const lmic_pinmap lmic_pins = {
 };
 
 // ── OLED ──────────────────────────────────────────────────────────────
+#undef OLED_SDA
+#undef OLED_SCL
 #define OLED_SDA 21
 #define OLED_SCL 22
 Adafruit_SSD1306 oled(128, 64, &Wire, -1);
