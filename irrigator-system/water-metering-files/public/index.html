@@ -475,6 +475,7 @@
           <!-- Spread stats -->
           <div class="irr-card irr-hidden" id="irr-spread-card">
             <div class="irr-section-title">Spread Stats</div>
+            <div id="irr-depth-legend" style="margin-bottom:8px"></div>
             <div class="irr-stat"><span>Area</span>      <span id="irr-area">—</span></div>
             <div class="irr-stat"><span>Volume</span>    <span id="irr-vol">—</span></div>
             <div class="irr-stat"><span>Rate</span>      <span id="irr-rate">—</span></div>
@@ -1192,17 +1193,28 @@ function irrBearing(from,to){
   return((Math.atan2(y,x)*180/Math.PI)+360)%360;
 }
 
-// ── Spread polygon (selected session highlight) ───────────────────────
+// ── Depth zone colour scale (zone 0=outermost/shallow → zone 4=innermost/deep)
+const DEPTH_ZONE_COLORS=['#b3e5fc','#4fc3f7','#0288d1','#01579b','#002171'];
+
+// ── Spread polygon (selected session — depth gradient) ────────────────
 function irrRenderSpread(gj,stats){
-  const color=irrSessionColorMap[irrActiveSession]||'#4caf50';
+  // Depth zones
+  L.geoJSON(gj,{
+    filter:f=>f.properties.type==='depth_zone',
+    style:f=>{
+      const c=DEPTH_ZONE_COLORS[f.properties.zone]||'#0288d1';
+      return {color:'none',fillColor:c,fillOpacity:0.75,weight:0};
+    },
+  }).bindTooltip(f=>`~${f.properties.depth_mm} mm depth`)
+  .addTo(irrSpreadLayer);
+
+  // Outer boundary outline
   L.geoJSON(gj,{
     filter:f=>f.properties.type==='spread',
-    style:{color:color,fillColor:color,fillOpacity:.5,weight:2},
-  }).bindTooltip(f=>{
-    const p=f.properties;
-    return `Area: ${p.area_ha} ha<br>Volume: ${(p.volume_l/1000).toFixed(1)} m³<br>`
-          +`Rate: ${p.app_rate_l_m2} L/m²<br>Depth: ${p.depth_mm} mm`;
+    style:{color:'#fff',fillOpacity:0,weight:1,opacity:0.5,dashArray:'4 3'},
   }).addTo(irrSpreadLayer);
+
+  irrUpdateDepthLegend(stats);
   irrShowStats(stats);
 }
 function irrShowStats(s){
@@ -1210,8 +1222,22 @@ function irrShowStats(s){
   document.getElementById('irr-area').textContent =`${s.area_ha} ha`;
   document.getElementById('irr-vol').textContent  =`${(s.volume_l/1000).toFixed(1)} m³`;
   document.getElementById('irr-rate').textContent =`${s.app_rate_l_m2} L/m²`;
-  document.getElementById('irr-depth').textContent=`${s.depth_mm} mm`;
+  document.getElementById('irr-depth').textContent=`${s.depth_mm} mm avg / ${s.max_depth_mm||'—'} mm max`;
   document.getElementById('irr-dur').textContent  =`${s.duration_min} min`;
+}
+function irrUpdateDepthLegend(s){
+  const el=document.getElementById('irr-depth-legend');
+  if(!el||!s) return;
+  const max=s.max_depth_mm||s.depth_mm||1;
+  const steps=DEPTH_ZONE_COLORS.length;
+  let html='<div style="font-size:0.7rem;color:var(--muted);margin-bottom:3px">Depth (mm)</div>';
+  html+='<div style="display:flex;gap:2px;align-items:center">';
+  for(let i=0;i<steps;i++){
+    const d=((max/steps)*(i+0.5)).toFixed(1);
+    html+=`<div style="background:${DEPTH_ZONE_COLORS[i]};width:22px;height:12px;border-radius:2px" title="${d} mm"></div>`;
+  }
+  html+=`</div><div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted)"><span>0</span><span>${max} mm</span></div>`;
+  el.innerHTML=html;
 }
 
 // ── Alerts ────────────────────────────────────────────────────────────

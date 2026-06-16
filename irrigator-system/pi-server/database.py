@@ -54,7 +54,7 @@ def init_db():
         );
 
         INSERT OR IGNORE INTO settings VALUES ('spread_width_m', '30.0');
-        INSERT OR IGNORE INTO settings VALUES ('flow_rate_lpm',  '833.0');
+        INSERT OR IGNORE INTO settings VALUES ('flow_rate_lpm',  '416.7');
         INSERT OR IGNORE INTO settings VALUES ('pushover_token', '');
         INSERT OR IGNORE INTO settings VALUES ('pushover_user',  '');
         INSERT OR IGNORE INTO settings VALUES ('stall_timeout_min', '10');
