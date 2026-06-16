@@ -458,7 +458,7 @@ app.post('/api/water/report', requireAuth, async (req, res) => {
 app.use('/irrigator-api', requireAuth, createProxyMiddleware({
   target: 'http://127.0.0.1:5000',
   changeOrigin: true,
-  pathRewrite: { '^/irrigator-api': '/api' },
+  pathRewrite: { '^/': '/api/' },
   on: {
     error: (_err, _req, res) =>
       res.status(502).json({ error: 'Irrigator server unavailable — is Flask running on port 5000?' }),
