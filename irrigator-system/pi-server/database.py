@@ -101,6 +101,29 @@ def init_db():
     cols = [r['name'] for r in conn.execute("PRAGMA table_info(positions)").fetchall()]
     if 'battery_soh' not in cols:
         conn.execute('ALTER TABLE positions ADD COLUMN battery_soh INTEGER DEFAULT 0')
+
+    # Seed default feed ingredient library if table is empty
+    if conn.execute('SELECT COUNT(*) FROM fm_ingredients').fetchone()[0] == 0:
+        conn.executemany(
+            'INSERT INTO fm_ingredients (name, dm_pct) VALUES (?,?)',
+            [
+                ('Maize Silage',      32.0),
+                ('Grass Silage',      28.0),
+                ('Pasture (fresh)',   18.0),
+                ('Hay (grass)',       86.0),
+                ('Lucerne Hay',       88.0),
+                ('Palm Kernel (PKE)', 90.0),
+                ('Barley Grain',      86.0),
+                ('Maize Grain',       86.0),
+                ('Wheat Grain',       88.0),
+                ('Soybean Meal',      89.0),
+                ('Canola Meal',       88.0),
+                ('Brewers Grain',     22.0),
+                ('Molasses',          75.0),
+                ('Wheat Straw',       86.0),
+            ]
+        )
+
     conn.commit()
     conn.close()
 
