@@ -1667,7 +1667,8 @@ async function fmLoadHerds(){
 }
 
 function _fmHerdCard(h){
-  const rationRows = (h.ration||[]).map((r,i)=>`
+  const entries = (h.entries || []);
+  const rationRows = entries.map((r,i)=>`
     <div class="fm-ration-row" id="fm-rrow-${h.id}-${i}">
       <select class="fm-input fm-ration-ing" style="flex:1;min-width:110px">
         ${fmIngredients.map(ing=>`<option value="${ing.id}" ${ing.id===r.ingredient_id?'selected':''}>${_esc(ing.name)}</option>`).join('')}
@@ -1678,33 +1679,53 @@ function _fmHerdCard(h){
     </div>
   `).join('');
 
+  const cows = h.num_cows || 0;
+  let mixHtml = '', totalWet = 0;
+  if (entries.length && cows > 0){
+    entries.forEach(r=>{
+      const dm = r.dm_pct || 1;
+      const wet = (r.kg_dm_per_cow * cows) / (dm / 100);
+      totalWet += wet;
+      mixHtml += `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:0.85rem">
+        <span>${_esc(r.ingredient_name||'Feed')}</span>
+        <span><b>${wet.toFixed(0)} kg</b> wet</span></div>`;
+    });
+    mixHtml += `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;
+      font-weight:700;display:flex;justify-content:space-between;font-size:0.88rem">
+      <span>Total load</span><span>${totalWet.toFixed(0)} kg</span></div>`;
+  }
+
   return `
     <div class="fm-herd-card" id="fm-herd-card-${h.id}">
       <div class="fm-herd-header" onclick="fmToggleHerd(${h.id})">
         <span style="font-weight:700;flex:1">${_esc(h.name)}</span>
-        <span class="fm-badge fm-badge-green">${h.cow_count ?? '—'} cows</span>
-        <span class="fm-badge fm-badge-orange">${h.meals_per_day ?? '—'} meals/day</span>
+        <span class="fm-badge fm-badge-green">${h.num_cows??'—'} cows</span>
+        <span class="fm-badge fm-badge-orange">${h.meals_per_day??'—'} meals/day</span>
         <button class="btn-sm" style="background:var(--border);color:var(--text);z-index:1"
                 onclick="event.stopPropagation();fmStartEditHerd(${h.id})">Edit</button>
         <button class="btn-sm btn-danger" style="z-index:1"
                 onclick="event.stopPropagation();fmDeleteHerd(${h.id})">Del</button>
         <button class="btn-sm btn-warning" style="z-index:1"
-                onclick="event.stopPropagation();fmPushDevice([${h.id}])">Push</button>
+                onclick="event.stopPropagation();fmPushDevice([${h.id}])">&#x2191; Push</button>
       </div>
       <div class="fm-herd-body" id="fm-herd-body-${h.id}">
-        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">Ration (kg DM per cow per meal)</div>
+        ${mixHtml ? `<div style="background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);
+            border-radius:8px;padding:10px;margin-bottom:10px">
+          <div style="font-size:0.75rem;color:var(--accent);text-transform:uppercase;
+              letter-spacing:0.05em;margin-bottom:6px">Mix — ${cows} cows</div>
+          ${mixHtml}</div>` : ''}
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">
+          Ration (kg DM per cow per meal)</div>
         <div id="fm-ration-rows-${h.id}">
-          ${rationRows || '<p style="color:var(--muted);font-size:0.82rem">No ration entries.</p>'}
+          ${rationRows||'<p style="color:var(--muted);font-size:0.82rem">No ration entries. Add ingredients below.</p>'}
         </div>
         <div class="fm-row" style="margin-top:0.5rem">
           <button class="btn-sm" style="background:var(--border);color:var(--text)"
-                  onclick="fmAddRationRow(${h.id})">+ Add entry</button>
-          <button class="btn-sm btn-success"
-                  onclick="fmSaveRation(${h.id})">Save ration</button>
+                  onclick="fmAddRationRow(${h.id})">+ Add ingredient</button>
+          <button class="btn-sm btn-success" onclick="fmSaveRation(${h.id})">Save ration</button>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function fmToggleHerd(id){
@@ -1738,10 +1759,10 @@ function fmStartEditHerd(id){
 
 async function fmSaveHerd(){
   const name         = document.getElementById('fm-herd-name').value.trim();
-  const cow_count    = parseInt(document.getElementById('fm-herd-cows').value,10)||null;
+  const num_cows     = parseInt(document.getElementById('fm-herd-cows').value,10)||null;
   const meals_per_day= parseInt(document.getElementById('fm-herd-meals').value,10)||null;
   if (!name){ alert('Herd name is required.'); return; }
-  const body = JSON.stringify({name, cow_count, meals_per_day});
+  const body = JSON.stringify({name, num_cows, meals_per_day});
   const hdrs = {'Content-Type':'application/json'};
   let r;
   if (fmEditHerdId){
@@ -1789,7 +1810,7 @@ async function fmSaveRation(herdId){
   const r = await api(`${FM}/herds/${herdId}/ration`, {
     method:'PUT',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({entries}),
+    body: JSON.stringify(entries),
   });
   if (r !== null) fmToast('Ration saved.', true);
   else            fmToast('Failed to save ration.', false);
