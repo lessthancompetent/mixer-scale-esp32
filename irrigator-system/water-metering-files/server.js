@@ -358,7 +358,7 @@ app.use('/irrigator-api', requireAuth, createProxyMiddleware({
 app.use('/feedmixer-api', requireAuth, createProxyMiddleware({
   target: 'http://127.0.0.1:5000',
   changeOrigin: true,
-  pathRewrite: { '^/feedmixer-api': '/feedmixer' },
+  pathRewrite: { '^/': '/feedmixer/' },
   on: {
     error: (_err, _req, res) =>
       res.status(502).json({ error: 'Feed mixer server unavailable — is Flask running on port 5000?' }),
