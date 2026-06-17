@@ -18,6 +18,8 @@ const PORT            = process.env.PORT            || 3000;
 const SECRET          = process.env.SESSION_SECRET  || 'change-this-secret-in-production';
 const MQTT_URL        = process.env.MQTT_URL        || 'mqtt://localhost:1883';
 const CHIRPSTACK_APP  = process.env.CHIRPSTACK_APP  || '870555a3-ebf5-4e4b-b629-0fdc3d3d3128';
+const CS_HOST         = process.env.CS_HOST         || '127.0.0.1';
+const CS_PORT         = parseInt(process.env.CS_PORT || '8080');
 const TG_TOKEN        = process.env.TG_TOKEN        || '';
 const TG_CHAT_ID      = process.env.TG_CHAT_ID      || '';
 const SMTP_USER       = process.env.SMTP_USER       || '';
@@ -269,6 +271,33 @@ mqttClient.on('message', (_topic, message) => {
       return;
     }
 
+    // Feed mixer feed-log uplink (fPort=11, type byte 0x50)
+    if (fPort === 11 && buf.length >= 5 && buf[0] === 0x50) {
+      const herdId     = buf[1];
+      const totalWetKg = buf.readUInt16BE(2) / 10.0;
+      const numSteps   = buf[4];
+      const steps      = [];
+      for (let i = 0; i < numSteps && (5 + i * 5 + 4) < buf.length; i++) {
+        const off = 5 + i * 5;
+        steps.push({
+          ingredient_idx: buf[off],
+          target_kg:      buf.readUInt16BE(off + 1) / 10.0,
+          loaded_kg:      buf.readUInt16BE(off + 3) / 10.0,
+        });
+      }
+      const logBody = JSON.stringify({ herd_id: herdId, total_wet_kg: totalWetKg, steps });
+      const logReq  = require('http').request({
+        hostname: '127.0.0.1', port: 5000, path: '/feedmixer/log',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(logBody) },
+      }, res => res.resume());
+      logReq.on('error', err => console.error('[FEEDMIX→FLASK]', err.message));
+      logReq.write(logBody); logReq.end();
+      console.log(`[FEEDMIX ${deviceId}] herd=${herdId} total=${totalWetKg}kg steps=${numSteps}`);
+      broadcastSSE({ type: 'feedmix_log', deviceId, herdId, totalWetKg, steps });
+      return;
+    }
+
     if (buf.length < 8) return;
     const eventType   = buf[0];
     const flags       = buf[1];
@@ -314,7 +343,7 @@ app.use(session({
 }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Irrigator proxy must be registered BEFORE express.json() so the request
+// Both proxies must be registered BEFORE express.json() so the request
 // body stream is forwarded intact to Flask (body parsers consume the stream).
 app.use('/irrigator-api', requireAuth, createProxyMiddleware({
   target: 'http://127.0.0.1:5000',
@@ -323,6 +352,16 @@ app.use('/irrigator-api', requireAuth, createProxyMiddleware({
   on: {
     error: (_err, _req, res) =>
       res.status(502).json({ error: 'Irrigator server unavailable — is Flask running on port 5000?' }),
+  },
+}));
+
+app.use('/feedmixer-api', requireAuth, createProxyMiddleware({
+  target: 'http://127.0.0.1:5000',
+  changeOrigin: true,
+  pathRewrite: { '^/feedmixer-api': '/feedmixer' },
+  on: {
+    error: (_err, _req, res) =>
+      res.status(502).json({ error: 'Feed mixer server unavailable — is Flask running on port 5000?' }),
   },
 }));
 
@@ -501,6 +540,135 @@ app.post('/api/water/report', requireAuth, async (req, res) => {
     res.json({ ok: true, message: `Report for ${year}-${String(month).padStart(2,'0')} sent to ${REPORT_TO}` });
   } catch (err) {
     console.error('[report]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Feed Mixer ───────────────────────────────────────────────────────────────
+
+function postToFlaskFM(path, payload) {
+  const body = JSON.stringify(payload);
+  const req  = require('http').request({
+    hostname: '127.0.0.1', port: 5000, path,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+  }, res => res.resume());
+  req.on('error', err => console.error('[FM→FLASK]', err.message));
+  req.write(body); req.end();
+}
+
+function getFlaskFM(path) {
+  return new Promise((resolve, reject) => {
+    const req = require('http').request(
+      { hostname: '127.0.0.1', port: 5000, path, method: 'GET' },
+      res => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
+  const b64  = payloadBuf.toString('base64');
+  const body = JSON.stringify({ queueItem: { confirmed: false, data: b64, fPort } });
+  return new Promise((resolve, reject) => {
+    const req = require('http').request({
+      hostname: CS_HOST,
+      port:     CS_PORT,
+      path:     `/api/devices/${devEui}/queue`,
+      method:   'POST',
+      headers: {
+        'Content-Type':           'application/json',
+        'Authorization':          `Bearer ${apiKey}`,
+        'Grpc-Metadata-Authorization': `Bearer ${apiKey}`,
+        'Content-Length':         Buffer.byteLength(body),
+      },
+    }, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.on('error', reject);
+    req.write(body); req.end();
+  });
+}
+
+function encodeIngredientPacket(idx, name, dmPct) {
+  const buf  = Buffer.alloc(14);
+  buf[0]     = 0x02;
+  buf[1]     = idx & 0xff;
+  const nameBytes = Buffer.from(name.slice(0, 10).padEnd(10, '\0'), 'utf8');
+  nameBytes.copy(buf, 2, 0, 10);
+  buf.writeUInt16BE(Math.round(dmPct * 10) & 0xffff, 12);
+  return buf;
+}
+
+function encodeHerdPacket(idx, name, numCows, mealsPerDay, entries) {
+  const maxEntries = Math.min(entries.length, 8);
+  const buf  = Buffer.alloc(16 + maxEntries * 3);
+  buf[0]     = 0x01;
+  buf[1]     = idx & 0xff;
+  const nameBytes = Buffer.from(name.slice(0, 10).padEnd(10, '\0'), 'utf8');
+  nameBytes.copy(buf, 2, 0, 10);
+  buf.writeUInt16BE(numCows & 0xffff, 12);
+  buf[14]    = mealsPerDay & 0xff;
+  buf[15]    = maxEntries & 0xff;
+  for (let i = 0; i < maxEntries; i++) {
+    const e   = entries[i];
+    const off = 16 + i * 3;
+    buf[off]  = (e.ingredient_id - 1) & 0xff;
+    buf.writeUInt16BE(Math.round(e.kg_dm_per_cow * 100) & 0xffff, off + 1);
+  }
+  return buf;
+}
+
+// POST /api/feedmixer/push-device  { herd_ids: [1,2,...] }
+app.post('/api/feedmixer/push-device', requireAuth, async (req, res) => {
+  try {
+    const settings = await getFlaskFM('/api/settings');
+    const devEui   = (settings.fm_device_eui || '').trim();
+    const apiKey   = (settings.fm_cs_api_key  || '').trim();
+    if (!devEui) return res.status(400).json({ error: 'Mixer wagon DevEUI not configured in Feed Mixer settings.' });
+    if (!apiKey) return res.status(400).json({ error: 'ChirpStack API key not configured in Feed Mixer settings.' });
+
+    const herds       = await getFlaskFM('/feedmixer/herds');
+    const ingredients = await getFlaskFM('/feedmixer/ingredients');
+
+    const herdIds = Array.isArray(req.body.herd_ids)
+      ? req.body.herd_ids.map(Number)
+      : herds.map(h => h.id);
+
+    const queued = [];
+    let   idx    = 0;
+
+    // Send each active ingredient
+    for (const ing of ingredients.filter(i => i.active)) {
+      const pkt = encodeIngredientPacket(idx, ing.name, ing.dm_pct);
+      await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
+      queued.push(`ingredient[${idx}]=${ing.name}`);
+      idx++;
+    }
+
+    // Send each selected herd
+    let herdIdx = 0;
+    for (const herd of herds) {
+      if (!herdIds.includes(herd.id)) { herdIdx++; continue; }
+      const pkt = encodeHerdPacket(herdIdx, herd.name, herd.num_cows, herd.meals_per_day, herd.entries || []);
+      await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
+      queued.push(`herd[${herdIdx}]=${herd.name}`);
+      herdIdx++;
+    }
+
+    console.log(`[FEEDMIX] Queued ${queued.length} downlinks to ${devEui}`);
+    res.json({ ok: true, queued });
+  } catch (err) {
+    console.error('[FEEDMIX push]', err);
     res.status(500).json({ error: err.message });
   }
 });

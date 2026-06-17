@@ -258,6 +258,124 @@
     .leaflet-container { background:#222; }
     .leaflet-popup-content-wrapper { background:#1a1d27; color:#e2e4ef; border:1px solid #2a2d3d; }
     .leaflet-popup-tip { background:#1a1d27; }
+
+    /* ── Feed Mixer tab ── */
+    .fm-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 600px) { .fm-grid { grid-template-columns: 1fr; } }
+    .fm-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .fm-section h3 {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+    .fm-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .fm-card:last-child { margin-bottom: 0; }
+    .fm-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(59,130,246,0.15);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .fm-badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .fm-badge-orange { background: rgba(249,115,22,0.15); color: var(--orange); }
+    .fm-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+      padding: 0.3rem 0.55rem;
+      outline: none;
+      width: auto;
+    }
+    .fm-input:focus { border-color: var(--accent); }
+    .fm-input-wide { width: 100%; margin-bottom: 0.5rem; display: block; }
+    .fm-herd-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.6rem;
+    }
+    .fm-herd-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.65rem 0.85rem;
+      cursor: pointer;
+      flex-wrap: wrap;
+    }
+    .fm-herd-header:hover { background: rgba(255,255,255,0.03); border-radius: 8px 8px 0 0; }
+    .fm-herd-body {
+      display: none;
+      padding: 0.75rem 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    .fm-herd-body.open { display: block; }
+    .fm-ration-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .fm-ration-row select { flex: 1; min-width: 120px; }
+    .fm-collapsible-toggle {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 0;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .fm-collapsible-toggle:hover { color: var(--text); opacity: 1; }
+    .fm-collapsible-body { display: none; margin-top: 0.75rem; }
+    .fm-collapsible-body.open { display: block; }
+    .fm-inline-form {
+      background: rgba(59,130,246,0.05);
+      border: 1px solid rgba(59,130,246,0.2);
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+      display: none;
+    }
+    .fm-inline-form.open { display: block; }
+    .fm-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .fm-row:last-child { margin-bottom: 0; }
+    .fm-spacer { flex: 1; }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-warning { background: var(--orange); color: #fff; }
+    .btn-muted { background: var(--border); color: var(--text); }
   </style>
 </head>
 <body>
@@ -290,6 +408,7 @@
     <button class="tab-btn active" onclick="switchTab('vat')">VAT Tap</button>
     <button class="tab-btn" onclick="switchTab('water')">Water Meters</button>
     <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
+    <button class="tab-btn" onclick="switchTab('feedmixer')">Feed Mixer</button>
   </nav>
 
   <main>
@@ -497,6 +616,106 @@
         <div id="irr-map"></div>
       </div>
     </div>
+
+    <!-- ── Feed Mixer tab ── -->
+    <div id="tab-feedmixer" class="tab-panel">
+
+      <!-- A. Device Settings -->
+      <div class="fm-section">
+        <button class="fm-collapsible-toggle" onclick="fmToggleSettings(this)">
+          <span id="fm-settings-arrow">&#9654;</span> Device Settings
+        </button>
+        <div class="fm-collapsible-body" id="fm-settings-body">
+          <div class="fm-row" style="margin-top:0.5rem">
+            <label style="min-width:120px;font-size:0.82rem;color:var(--muted)">DevEUI</label>
+            <input type="text" id="fm-dev-eui" class="fm-input" style="flex:1;min-width:180px" placeholder="0011223344556677">
+          </div>
+          <div class="fm-row">
+            <label style="min-width:120px;font-size:0.82rem;color:var(--muted)">ChirpStack API key</label>
+            <input type="text" id="fm-cs-api-key" class="fm-input" style="flex:1;min-width:180px" placeholder="API key">
+          </div>
+          <div class="fm-row">
+            <button class="btn-success btn-sm" onclick="fmSaveSettings()">Save</button>
+            <span id="fm-settings-msg" style="font-size:0.82rem;color:var(--green);display:none">Saved.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="fm-grid">
+
+        <!-- B. Ingredients Library -->
+        <div class="fm-section">
+          <h3>Ingredients Library</h3>
+          <button class="btn-sm" style="background:var(--accent);color:#fff;margin-bottom:0.6rem"
+                  onclick="fmToggleIngForm()">+ Add Ingredient</button>
+          <div class="fm-inline-form" id="fm-ing-form">
+            <div class="fm-row">
+              <input type="text" id="fm-ing-name" class="fm-input" placeholder="Name (e.g. Maize silage)" style="flex:1">
+            </div>
+            <div class="fm-row">
+              <label style="font-size:0.82rem;color:var(--muted);min-width:50px">DM %</label>
+              <input type="number" id="fm-ing-dm" class="fm-input" placeholder="32" min="0" max="100" step="0.1" style="width:80px">
+              <label class="avg14-label" style="margin-left:0.5rem">
+                <input type="checkbox" id="fm-ing-active" checked> Active
+              </label>
+            </div>
+            <div class="fm-row">
+              <button class="btn-sm btn-success" onclick="fmSaveIngredient()">Save</button>
+              <button class="btn-sm btn-muted" onclick="fmToggleIngForm()">Cancel</button>
+            </div>
+          </div>
+          <div id="fm-ing-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
+        </div>
+
+        <!-- C. Herds & Rations -->
+        <div class="fm-section">
+          <h3>Herds &amp; Rations</h3>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem">
+            <button class="btn-sm" style="background:var(--accent);color:#fff"
+                    onclick="fmToggleHerdForm()">+ Add Herd</button>
+            <button class="btn-sm btn-warning" onclick="fmPushDevice(null)">Push all herds</button>
+          </div>
+          <div class="fm-inline-form" id="fm-herd-form">
+            <div class="fm-row">
+              <input type="text" id="fm-herd-name" class="fm-input" placeholder="Herd name" style="flex:1">
+            </div>
+            <div class="fm-row">
+              <label style="font-size:0.82rem;color:var(--muted);min-width:70px">Cows</label>
+              <input type="number" id="fm-herd-cows" class="fm-input" placeholder="100" min="1" style="width:80px">
+              <label style="font-size:0.82rem;color:var(--muted);min-width:80px;margin-left:0.5rem">Meals/day</label>
+              <input type="number" id="fm-herd-meals" class="fm-input" placeholder="2" min="1" max="10" style="width:70px">
+            </div>
+            <div class="fm-row">
+              <button class="btn-sm btn-success" onclick="fmSaveHerd()">Save</button>
+              <button class="btn-sm btn-muted" onclick="fmToggleHerdForm()">Cancel</button>
+            </div>
+          </div>
+          <div id="fm-herd-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
+        </div>
+
+      </div>
+
+      <!-- D. Feed Log -->
+      <div class="fm-section">
+        <h3>Feed Log</h3>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Date / Time</th>
+                <th>Herd</th>
+                <th>Total kg</th>
+                <th>Steps</th>
+              </tr>
+            </thead>
+            <tbody id="fm-log-tbody">
+              <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- #tab-feedmixer -->
 
   </main>
 </div>
@@ -970,7 +1189,7 @@ let activeTab='vat';
 
 function switchTab(tab){
   activeTab=tab;
-  const tabs=['vat','water','irrigator'];
+  const tabs=['vat','water','irrigator','feedmixer'];
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
     b.classList.toggle('active', tabs[i]===tab);
   });
@@ -979,6 +1198,7 @@ function switchTab(tab){
   });
   if (tab==='water')     refreshWater();
   if (tab==='irrigator') irrInit();
+  if (tab==='feedmixer') fmInit();
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1319,6 +1539,297 @@ async function irrApi(path,opts={}){
     return null;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Feed Mixer
+// ──────────────────────────────────────────────────────────────────────
+const FM = '/feedmixer-api';
+
+// State
+let fmIngredients = [];   // full ingredient list (for ration dropdowns)
+let fmEditIngId   = null; // ingredient being edited (null = new)
+let fmEditHerdId  = null; // herd being edited (null = new)
+
+// ── Init ──────────────────────────────────────────────────────────────
+async function fmInit(){
+  await fmLoadSettings();
+  await Promise.all([fmLoadIngredients(), fmLoadHerds(), fmLoadLog()]);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────
+async function fmLoadSettings(){
+  const s = await api('/irrigator-api/settings');
+  if (!s) return;
+  if (s.fm_device_eui)  document.getElementById('fm-dev-eui').value   = s.fm_device_eui;
+  if (s.fm_cs_api_key)  document.getElementById('fm-cs-api-key').value = s.fm_cs_api_key;
+}
+
+async function fmSaveSettings(){
+  const body = {
+    fm_device_eui: document.getElementById('fm-dev-eui').value.trim(),
+    fm_cs_api_key: document.getElementById('fm-cs-api-key').value.trim(),
+  };
+  const r = await api('/irrigator-api/settings', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  const msg = document.getElementById('fm-settings-msg');
+  if (r !== null){ msg.style.display='inline'; setTimeout(()=>msg.style.display='none',2500); }
+}
+
+function fmToggleSettings(btn){
+  const body  = document.getElementById('fm-settings-body');
+  const arrow = document.getElementById('fm-settings-arrow');
+  const open  = body.classList.toggle('open');
+  arrow.innerHTML = open ? '&#9660;' : '&#9654;';
+}
+
+// ── Toast (reuse irrigator toast) ────────────────────────────────────
+function fmToast(msg, ok=true){ irrShowToast(msg, !ok); }
+
+// ── Ingredients ──────────────────────────────────────────────────────
+async function fmLoadIngredients(){
+  const data = await api(FM+'/ingredients');
+  fmIngredients = data || [];
+  const el = document.getElementById('fm-ing-list');
+  if (!fmIngredients.length){
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No ingredients yet.</p>';
+    return;
+  }
+  el.innerHTML = fmIngredients.map(ing => `
+    <div class="fm-card" id="fm-ing-row-${ing.id}">
+      <span style="flex:1;font-weight:600;font-size:0.88rem">${_esc(ing.name)}</span>
+      <span class="fm-badge">${ing.dm_pct ?? '—'} % DM</span>
+      <span class="fm-badge ${ing.active ? 'fm-badge-green' : ''}">${ing.active ? 'Active' : 'Inactive'}</span>
+      <button class="btn-sm" style="background:var(--border);color:var(--text)"
+              onclick="fmStartEditIngredient(${ing.id})">Edit</button>
+      <button class="btn-sm btn-danger"
+              onclick="fmDeleteIngredient(${ing.id})">Del</button>
+    </div>
+  `).join('');
+}
+
+function fmToggleIngForm(clear=true){
+  const form = document.getElementById('fm-ing-form');
+  const open = form.classList.toggle('open');
+  if (!open || clear){
+    fmEditIngId = null;
+    document.getElementById('fm-ing-name').value = '';
+    document.getElementById('fm-ing-dm').value   = '';
+    document.getElementById('fm-ing-active').checked = true;
+  }
+}
+
+function fmStartEditIngredient(id){
+  const ing = fmIngredients.find(i=>i.id===id);
+  if (!ing) return;
+  fmEditIngId = id;
+  document.getElementById('fm-ing-name').value   = ing.name;
+  document.getElementById('fm-ing-dm').value     = ing.dm_pct ?? '';
+  document.getElementById('fm-ing-active').checked = !!ing.active;
+  const form = document.getElementById('fm-ing-form');
+  form.classList.add('open');
+  form.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function fmSaveIngredient(){
+  const name   = document.getElementById('fm-ing-name').value.trim();
+  const dm_pct = parseFloat(document.getElementById('fm-ing-dm').value);
+  const active = document.getElementById('fm-ing-active').checked ? 1 : 0;
+  if (!name){ alert('Ingredient name is required.'); return; }
+  const body = JSON.stringify({name, dm_pct: isNaN(dm_pct)?null:dm_pct, active});
+  const hdrs = {'Content-Type':'application/json'};
+  let r;
+  if (fmEditIngId){
+    r = await api(`${FM}/ingredients/${fmEditIngId}`, {method:'PUT', headers:hdrs, body});
+  } else {
+    r = await api(`${FM}/ingredients`,                {method:'POST',headers:hdrs, body});
+  }
+  if (r !== null){ fmToggleIngForm(true); await fmLoadIngredients(); }
+}
+
+async function fmDeleteIngredient(id){
+  if (!confirm('Delete this ingredient?')) return;
+  await api(`${FM}/ingredients/${id}`, {method:'DELETE'});
+  await fmLoadIngredients();
+}
+
+// ── Herds & Rations ──────────────────────────────────────────────────
+async function fmLoadHerds(){
+  const herds = await api(FM+'/herds');
+  const el = document.getElementById('fm-herd-list');
+  if (!herds || !herds.length){
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No herds yet.</p>';
+    return;
+  }
+  el.innerHTML = herds.map(h => _fmHerdCard(h)).join('');
+}
+
+function _fmHerdCard(h){
+  const rationRows = (h.ration||[]).map((r,i)=>`
+    <div class="fm-ration-row" id="fm-rrow-${h.id}-${i}">
+      <select class="fm-input fm-ration-ing" style="flex:1;min-width:110px">
+        ${fmIngredients.map(ing=>`<option value="${ing.id}" ${ing.id===r.ingredient_id?'selected':''}>${_esc(ing.name)}</option>`).join('')}
+      </select>
+      <input type="number" class="fm-input fm-ration-kg" value="${r.kg_dm_per_cow??''}" placeholder="kg DM" min="0" step="0.1" style="width:80px">
+      <span style="font-size:0.78rem;color:var(--muted)">kg DM/cow</span>
+      <button class="btn-sm btn-danger" onclick="this.closest('.fm-ration-row').remove()">×</button>
+    </div>
+  `).join('');
+
+  return `
+    <div class="fm-herd-card" id="fm-herd-card-${h.id}">
+      <div class="fm-herd-header" onclick="fmToggleHerd(${h.id})">
+        <span style="font-weight:700;flex:1">${_esc(h.name)}</span>
+        <span class="fm-badge fm-badge-green">${h.cow_count ?? '—'} cows</span>
+        <span class="fm-badge fm-badge-orange">${h.meals_per_day ?? '—'} meals/day</span>
+        <button class="btn-sm" style="background:var(--border);color:var(--text);z-index:1"
+                onclick="event.stopPropagation();fmStartEditHerd(${h.id})">Edit</button>
+        <button class="btn-sm btn-danger" style="z-index:1"
+                onclick="event.stopPropagation();fmDeleteHerd(${h.id})">Del</button>
+        <button class="btn-sm btn-warning" style="z-index:1"
+                onclick="event.stopPropagation();fmPushDevice([${h.id}])">Push</button>
+      </div>
+      <div class="fm-herd-body" id="fm-herd-body-${h.id}">
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">Ration (kg DM per cow per meal)</div>
+        <div id="fm-ration-rows-${h.id}">
+          ${rationRows || '<p style="color:var(--muted);font-size:0.82rem">No ration entries.</p>'}
+        </div>
+        <div class="fm-row" style="margin-top:0.5rem">
+          <button class="btn-sm" style="background:var(--border);color:var(--text)"
+                  onclick="fmAddRationRow(${h.id})">+ Add entry</button>
+          <button class="btn-sm btn-success"
+                  onclick="fmSaveRation(${h.id})">Save ration</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function fmToggleHerd(id){
+  document.getElementById('fm-herd-body-'+id).classList.toggle('open');
+}
+
+function fmToggleHerdForm(clear=true){
+  const form = document.getElementById('fm-herd-form');
+  const open = form.classList.toggle('open');
+  if (!open || clear){
+    fmEditHerdId = null;
+    document.getElementById('fm-herd-name').value  = '';
+    document.getElementById('fm-herd-cows').value  = '';
+    document.getElementById('fm-herd-meals').value = '';
+  }
+}
+
+function fmStartEditHerd(id){
+  // Fetch the herd from the rendered card (re-query DOM for current values)
+  const card = document.getElementById('fm-herd-card-'+id);
+  if (!card) return;
+  fmEditHerdId = id;
+  // Extract values from badges
+  const badges = card.querySelectorAll('.fm-badge');
+  const name = card.querySelector('.fm-herd-header span').textContent.trim();
+  document.getElementById('fm-herd-name').value  = name;
+  const form = document.getElementById('fm-herd-form');
+  form.classList.add('open');
+  form.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function fmSaveHerd(){
+  const name         = document.getElementById('fm-herd-name').value.trim();
+  const cow_count    = parseInt(document.getElementById('fm-herd-cows').value,10)||null;
+  const meals_per_day= parseInt(document.getElementById('fm-herd-meals').value,10)||null;
+  if (!name){ alert('Herd name is required.'); return; }
+  const body = JSON.stringify({name, cow_count, meals_per_day});
+  const hdrs = {'Content-Type':'application/json'};
+  let r;
+  if (fmEditHerdId){
+    r = await api(`${FM}/herds/${fmEditHerdId}`, {method:'PUT', headers:hdrs, body});
+  } else {
+    r = await api(`${FM}/herds`,                 {method:'POST',headers:hdrs, body});
+  }
+  if (r !== null){ fmToggleHerdForm(true); await fmLoadHerds(); }
+}
+
+async function fmDeleteHerd(id){
+  if (!confirm('Delete this herd and its ration?')) return;
+  await api(`${FM}/herds/${id}`, {method:'DELETE'});
+  await fmLoadHerds();
+}
+
+function fmAddRationRow(herdId){
+  const container = document.getElementById('fm-ration-rows-'+herdId);
+  // Remove "no ration entries" placeholder if present
+  const placeholder = container.querySelector('p');
+  if (placeholder) placeholder.remove();
+  const idx = container.querySelectorAll('.fm-ration-row').length;
+  const ingOptions = fmIngredients.map(ing=>`<option value="${ing.id}">${_esc(ing.name)}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'fm-ration-row';
+  row.id = `fm-rrow-${herdId}-new-${idx}`;
+  row.innerHTML = `
+    <select class="fm-input fm-ration-ing" style="flex:1;min-width:110px">${ingOptions}</select>
+    <input type="number" class="fm-input fm-ration-kg" value="" placeholder="kg DM" min="0" step="0.1" style="width:80px">
+    <span style="font-size:0.78rem;color:var(--muted)">kg DM/cow</span>
+    <button class="btn-sm btn-danger" onclick="this.closest('.fm-ration-row').remove()">×</button>
+  `;
+  container.appendChild(row);
+}
+
+async function fmSaveRation(herdId){
+  const container = document.getElementById('fm-ration-rows-'+herdId);
+  const rows      = container.querySelectorAll('.fm-ration-row');
+  const entries   = [];
+  rows.forEach(row=>{
+    const ing_id = parseInt(row.querySelector('.fm-ration-ing').value, 10);
+    const kg     = parseFloat(row.querySelector('.fm-ration-kg').value);
+    if (ing_id && !isNaN(kg)) entries.push({ingredient_id:ing_id, kg_dm_per_cow:kg});
+  });
+  const r = await api(`${FM}/herds/${herdId}/ration`, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({entries}),
+  });
+  if (r !== null) fmToast('Ration saved.', true);
+  else            fmToast('Failed to save ration.', false);
+}
+
+// ── Push to device ────────────────────────────────────────────────────
+async function fmPushDevice(herdIds){
+  const body = herdIds ? {herd_ids: herdIds} : {};
+  const r = await api('/api/feedmixer/push-device', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (r !== null) fmToast('Pushed to device successfully.', true);
+  else            fmToast('Push to device failed.', false);
+}
+
+// ── Feed Log ─────────────────────────────────────────────────────────
+async function fmLoadLog(){
+  const log  = await api(FM+'/log');
+  const tbody= document.getElementById('fm-log-tbody');
+  if (!log || !log.length){
+    tbody.innerHTML='<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">No feed sessions yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = log.map(row => {
+    const stepsHtml = (row.steps && row.steps.length)
+      ? row.steps.map(s=>`<div style="font-size:0.75rem;color:var(--muted)">${_esc(String(s.step_index??''))}: ${_esc(String(s.ingredient_name??''))} — ${s.actual_kg??'—'} kg</div>`).join('')
+      : '<span style="color:var(--muted);font-size:0.75rem">—</span>';
+    return `<tr>
+      <td>${_esc(String(row.created_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${_esc(row.herd_name||'—')}</td>
+      <td>${row.total_kg != null ? row.total_kg : '—'}</td>
+      <td>${stepsHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Utility ───────────────────────────────────────────────────────────
+function _esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 </script>
 </body>
 </html>

@@ -277,11 +277,175 @@ def get_settings():
 def update_settings():
     data = request.get_json(force=True, silent=True) or {}
     allowed = {'spread_width_m', 'flow_rate_lpm', 'pushover_token',
-               'pushover_user', 'stall_timeout_min'}
+               'pushover_user', 'stall_timeout_min', 'fm_device_eui', 'fm_cs_api_key'}
     for key, value in data.items():
         if key in allowed:
             set_setting(key, value)
     return jsonify({'updated': list(data.keys())})
+
+
+# ── Feed Mixer ───────────────────────────────────────────────────────────────
+
+@app.get('/feedmixer/ingredients')
+def fm_list_ingredients():
+    conn = get_conn()
+    rows = conn.execute('SELECT * FROM fm_ingredients ORDER BY name').fetchall()
+    conn.close()
+    return jsonify(rows_to_list(rows))
+
+
+@app.post('/feedmixer/ingredients')
+def fm_create_ingredient():
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get('name', '').strip()
+    if not name:
+        abort(400)
+    dm = float(data.get('dm_pct', 0))
+    conn = get_conn()
+    cur = conn.execute('INSERT INTO fm_ingredients (name, dm_pct) VALUES (?,?)', (name, dm))
+    conn.commit()
+    row = conn.execute('SELECT * FROM fm_ingredients WHERE id=?', (cur.lastrowid,)).fetchone()
+    conn.close()
+    return jsonify(row_to_dict(row)), 201
+
+
+@app.put('/feedmixer/ingredients/<int:iid>')
+def fm_update_ingredient(iid):
+    data = request.get_json(force=True, silent=True) or {}
+    fields, vals = [], []
+    for col in ('name', 'dm_pct', 'active'):
+        if col in data:
+            fields.append(f'{col}=?')
+            vals.append(data[col])
+    if not fields:
+        abort(400)
+    vals.append(iid)
+    conn = get_conn()
+    conn.execute(f'UPDATE fm_ingredients SET {", ".join(fields)} WHERE id=?', vals)
+    conn.commit()
+    row = conn.execute('SELECT * FROM fm_ingredients WHERE id=?', (iid,)).fetchone()
+    conn.close()
+    return jsonify(row_to_dict(row))
+
+
+@app.delete('/feedmixer/ingredients/<int:iid>')
+def fm_delete_ingredient(iid):
+    conn = get_conn()
+    conn.execute('DELETE FROM fm_ration_entries WHERE ingredient_id=?', (iid,))
+    conn.execute('DELETE FROM fm_ingredients WHERE id=?', (iid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'deleted': iid})
+
+
+@app.get('/feedmixer/herds')
+def fm_list_herds():
+    conn = get_conn()
+    herds = rows_to_list(conn.execute('SELECT * FROM fm_herds ORDER BY name').fetchall())
+    for h in herds:
+        h['entries'] = rows_to_list(conn.execute(
+            '''SELECT e.*, i.name AS ingredient_name, i.dm_pct
+               FROM fm_ration_entries e
+               JOIN fm_ingredients i ON i.id = e.ingredient_id
+               WHERE e.herd_id=? ORDER BY e.id''', (h['id'],)
+        ).fetchall())
+    conn.close()
+    return jsonify(herds)
+
+
+@app.post('/feedmixer/herds')
+def fm_create_herd():
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get('name', '').strip()
+    if not name:
+        abort(400)
+    conn = get_conn()
+    cur = conn.execute(
+        'INSERT INTO fm_herds (name, num_cows, meals_per_day) VALUES (?,?,?)',
+        (name, int(data.get('num_cows', 0)), int(data.get('meals_per_day', 2)))
+    )
+    conn.commit()
+    row = conn.execute('SELECT * FROM fm_herds WHERE id=?', (cur.lastrowid,)).fetchone()
+    conn.close()
+    return jsonify(row_to_dict(row)), 201
+
+
+@app.put('/feedmixer/herds/<int:hid>')
+def fm_update_herd(hid):
+    data = request.get_json(force=True, silent=True) or {}
+    fields, vals = [], []
+    for col in ('name', 'num_cows', 'meals_per_day'):
+        if col in data:
+            fields.append(f'{col}=?')
+            vals.append(data[col])
+    if not fields:
+        abort(400)
+    vals.append(hid)
+    conn = get_conn()
+    conn.execute(f'UPDATE fm_herds SET {", ".join(fields)} WHERE id=?', vals)
+    conn.commit()
+    row = conn.execute('SELECT * FROM fm_herds WHERE id=?', (hid,)).fetchone()
+    conn.close()
+    return jsonify(row_to_dict(row))
+
+
+@app.delete('/feedmixer/herds/<int:hid>')
+def fm_delete_herd(hid):
+    conn = get_conn()
+    conn.execute('DELETE FROM fm_ration_entries WHERE herd_id=?', (hid,))
+    conn.execute('DELETE FROM fm_herds WHERE id=?', (hid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'deleted': hid})
+
+
+@app.put('/feedmixer/herds/<int:hid>/ration')
+def fm_set_ration(hid):
+    entries = request.get_json(force=True, silent=True) or []
+    conn = get_conn()
+    conn.execute('DELETE FROM fm_ration_entries WHERE herd_id=?', (hid,))
+    for e in entries:
+        conn.execute(
+            'INSERT INTO fm_ration_entries (herd_id, ingredient_id, kg_dm_per_cow) VALUES (?,?,?)',
+            (hid, int(e['ingredient_id']), float(e['kg_dm_per_cow']))
+        )
+    conn.commit()
+    rows = rows_to_list(conn.execute(
+        '''SELECT e.*, i.name AS ingredient_name, i.dm_pct
+           FROM fm_ration_entries e
+           JOIN fm_ingredients i ON i.id = e.ingredient_id
+           WHERE e.herd_id=? ORDER BY e.id''', (hid,)
+    ).fetchall())
+    conn.close()
+    return jsonify(rows)
+
+
+@app.get('/feedmixer/log')
+def fm_get_log():
+    limit = min(int(request.args.get('limit', 100)), 500)
+    conn = get_conn()
+    rows = rows_to_list(conn.execute(
+        'SELECT * FROM fm_feed_log ORDER BY logged_at DESC LIMIT ?', (limit,)
+    ).fetchall())
+    conn.close()
+    for r in rows:
+        if r.get('steps_json'):
+            r['steps'] = json.loads(r['steps_json'])
+    return jsonify(rows)
+
+
+@app.post('/feedmixer/log')
+def fm_add_log():
+    data = request.get_json(force=True, silent=True) or {}
+    conn = get_conn()
+    conn.execute(
+        'INSERT INTO fm_feed_log (herd_id, herd_name, total_wet_kg, steps_json) VALUES (?,?,?,?)',
+        (data.get('herd_id'), data.get('herd_name', ''),
+         data.get('total_wet_kg', 0), json.dumps(data.get('steps', [])))
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True}), 201
 
 
 # ── Root ──────────────────────────────────────────────────────────────────────

@@ -60,6 +60,38 @@ def init_db():
         INSERT OR IGNORE INTO settings VALUES ('pushover_token', '');
         INSERT OR IGNORE INTO settings VALUES ('pushover_user',  '');
         INSERT OR IGNORE INTO settings VALUES ('stall_timeout_min', '10');
+        INSERT OR IGNORE INTO settings VALUES ('fm_device_eui',  '');
+        INSERT OR IGNORE INTO settings VALUES ('fm_cs_api_key',  '');
+
+        CREATE TABLE IF NOT EXISTS fm_ingredients (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            name    TEXT NOT NULL,
+            dm_pct  REAL NOT NULL DEFAULT 0.0,
+            active  INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS fm_herds (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT NOT NULL,
+            num_cows       INTEGER NOT NULL DEFAULT 0,
+            meals_per_day  INTEGER NOT NULL DEFAULT 2
+        );
+
+        CREATE TABLE IF NOT EXISTS fm_ration_entries (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            herd_id        INTEGER NOT NULL REFERENCES fm_herds(id) ON DELETE CASCADE,
+            ingredient_id  INTEGER NOT NULL REFERENCES fm_ingredients(id),
+            kg_dm_per_cow  REAL NOT NULL DEFAULT 0.0
+        );
+
+        CREATE TABLE IF NOT EXISTS fm_feed_log (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            logged_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            herd_id       INTEGER,
+            herd_name     TEXT,
+            total_wet_kg  REAL,
+            steps_json    TEXT
+        );
 
         CREATE INDEX IF NOT EXISTS idx_pos_session   ON positions(session_id);
         CREATE INDEX IF NOT EXISTS idx_pos_timestamp ON positions(timestamp);
