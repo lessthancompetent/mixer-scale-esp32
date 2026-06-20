@@ -631,28 +631,14 @@ function getFlaskFM(path) {
   });
 }
 
-async function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
-  const b64  = payloadBuf.toString('base64');
-  const body = JSON.stringify({ queueItem: { confirmed: false, data: b64, fPort } });
+function sendChirpStackDownlink(devEui, _apiKey, fPort, payloadBuf) {
+  const topic = `application/${CHIRPSTACK_APP}/device/${devEui}/command/down`;
+  const msg   = JSON.stringify({ devEui, confirmed: false, fPort, data: payloadBuf.toString('base64') });
   return new Promise((resolve, reject) => {
-    const req = require('http').request({
-      hostname: CS_HOST,
-      port:     CS_PORT,
-      path:     `/api/devices/${devEui}/queue`,
-      method:   'POST',
-      headers: {
-        'Content-Type':           'application/json',
-        'Authorization':          `Bearer ${apiKey}`,
-        'Grpc-Metadata-Authorization': `Bearer ${apiKey}`,
-        'Content-Length':         Buffer.byteLength(body),
-      },
-    }, res => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    mqttClient.publish(topic, msg, { qos: 0 }, err => {
+      if (err) reject(err);
+      else resolve({ status: 200, body: 'published via MQTT' });
     });
-    req.on('error', reject);
-    req.write(body); req.end();
   });
 }
 
