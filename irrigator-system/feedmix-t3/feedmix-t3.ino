@@ -790,34 +790,43 @@ void loop() {
 
   unsigned long now = millis();
 
+  // TEST MODE: encoder simulates load cell weight (+/-50 kg per click)
   int encCur = digitalRead(ENC_CLK);
   if (encCur != encLast && encCur == LOW && (now - lastEncMs > 50)) {
-    lastEncMs = now;
-    if (numHerd > 0) {
-      if (digitalRead(ENC_DT) != encCur)
-        activeHerdIdx = (activeHerdIdx + 1) % numHerd;
-      else
-        activeHerdIdx = (activeHerdIdx == 0) ? numHerd - 1 : activeHerdIdx - 1;
-      cowOverride = 0;
-      memset(stepLoaded, 0, sizeof(stepLoaded));
-      for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
+    lastEncMs  = now;
+    scaleValid = true;
+    if (digitalRead(ENC_DT) != encCur)
+      scaleKg += 50.0f;
+    else
+      scaleKg = max(0.0f, scaleKg - 50.0f);
+    // Propagate to any tared steps (same logic as readScale)
+    for (uint8_t i = 0; i < MAX_ENTRY; i++) {
+      if (stepTare[i] >= 0) {
+        float net = scaleKg - stepTare[i];
+        if (net > stepLoaded[i]) stepLoaded[i] = net;
+      }
     }
   }
   encLast = encCur;
 
+  // Button: short press = next herd | long press = reset scale + steps
   bool swDown = (digitalRead(ENC_SW) == LOW);
   if (swDown && !swWasDown) { swDownAt = now; swWasDown = true; }
   if (!swDown && swWasDown) {
     unsigned long held = now - swDownAt;
     if (held > 1000) {
+      scaleKg = 0; scaleValid = false;
       memset(stepLoaded, 0, sizeof(stepLoaded));
       for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
-      snprintf(loraStatus, sizeof(loraStatus), "Steps reset");
+      snprintf(loraStatus, sizeof(loraStatus), "Scale + steps reset");
     } else if (held > 50) {
-      sendLogHerd = numHerd > 0 ? activeHerdIdx % numHerd : 0;
-      wantSendLog = true;
-      memset(stepLoaded, 0, sizeof(stepLoaded));
-      for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
+      if (numHerd > 0) {
+        activeHerdIdx = (activeHerdIdx + 1) % numHerd;
+        cowOverride = 0;
+        scaleKg = 0; scaleValid = false;
+        memset(stepLoaded, 0, sizeof(stepLoaded));
+        for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
+      }
     }
     swWasDown = false;
   }
