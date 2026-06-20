@@ -104,20 +104,29 @@ static osjob_t txjob;
 static uint8_t txBuf[64];
 static uint8_t txLen = 0;
 
+// Mutex protecting shared data written by LMIC task (Core 0) and read by HTTP (Core 1)
+static SemaphoreHandle_t dataMutex;
+
+// Flag set by HTTP/encoder (Core 1) to request a feed-log uplink from the LMIC task (Core 0).
+// os_setCallback() must only be called from the core running os_runloop_once().
+volatile bool    wantSendLog  = false;
+volatile uint8_t sendLogHerd  = 0;
+
 unsigned long lastOledMs  = 0;
 int           encLast     = HIGH;
 bool          swWasDown   = false;
 unsigned long swDownAt    = 0;
 unsigned long lastEncMs   = 0;
 
-// ── Downlink parser (fPort=10) ────────────────────────────────────────────────
+// ── Downlink parser (fPort=10) — called from LMIC task (Core 0) ──────────────
 void parseDownlink(uint8_t fPort, const uint8_t *buf, uint8_t len) {
   if (fPort != 10 || len < 2) return;
   uint8_t type = buf[0];
   uint8_t idx  = buf[1];
 
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+
   if (type == 0x02 && len >= 14) {
-    // Ingredient: [0x02][idx][name:10][dm_pct*10:u16BE]
     Ingredient &ing = ingredients[idx % MAX_ING];
     ing.idx = idx;
     memcpy(ing.name, buf + 2, 10);
@@ -131,7 +140,6 @@ void parseDownlink(uint8_t fPort, const uint8_t *buf, uint8_t len) {
   }
 
   if (type == 0x01 && len >= 16) {
-    // Herd: [0x01][idx][name:10][numCows:u16BE][meals][nEntries][entries:3each]
     Herd &h = herds[idx % MAX_HERD];
     h.idx = idx;
     memcpy(h.name, buf + 2, 10);
@@ -146,12 +154,13 @@ void parseDownlink(uint8_t fPort, const uint8_t *buf, uint8_t len) {
     }
     h.valid = true;
     if (idx >= numHerd) numHerd = idx + 1;
-    // Reset session state when a fresh herd config arrives
     memset(stepDone, 0, sizeof(stepDone));
     cowOverride = 0;
     snprintf(loraStatus, sizeof(loraStatus), "RX herd: %s", h.name);
     Serial.printf("[DL] Herd[%d] %s cows=%d ent=%d\n", idx, h.name, h.num_cows, h.num_entries);
   }
+
+  xSemaphoreGive(dataMutex);
 }
 
 // ── Uplink: feed log (fPort=11, type 0x50) ───────────────────────────────────
@@ -233,8 +242,9 @@ void onEvent(ev_t ev) {
 
 // ── HTTP API ──────────────────────────────────────────────────────────────────
 
-// Builds a compact JSON status blob consumed by the phone page
+// Builds a compact JSON status blob — called from HTTP task (Core 1)
 String buildStatusJson() {
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
   uint8_t hi = numHerd > 0 ? activeHerdIdx % numHerd : 0;
   String  j  = "{";
   j += "\"lora\":\"";   j += loraStatus; j += "\",";
@@ -278,6 +288,7 @@ String buildStatusJson() {
     j += "\"herd\":null";
   }
   j += "}";
+  xSemaphoreGive(dataMutex);
   return j;
 }
 
@@ -320,8 +331,9 @@ void apiStepUndo() {
 }
 
 void apiComplete() {
-  uint8_t hi = numHerd > 0 ? activeHerdIdx % numHerd : 0;
-  sendFeedLog(hi);
+  // Signal LMIC task (Core 0) to send the uplink — os_setCallback must run there
+  sendLogHerd  = numHerd > 0 ? activeHerdIdx % numHerd : 0;
+  wantSendLog  = true;
   memset(stepDone, 0, sizeof(stepDone));
   httpServer.send(200, "application/json", "{\"ok\":true}");
 }
@@ -449,11 +461,33 @@ void updateOled() {
   oled.display();
 }
 
+// ── LMIC task — pinned to Core 0 so WiFi interrupts (Core 1) don't preempt it ─
+void loraTask(void *pv) {
+  // T3 v1.6.1 LoRa SPI: SCK=5, MISO=19, MOSI=27, NSS=18
+  SPI.begin(5, 19, 27, 18);
+  os_init();
+  LMIC_reset();
+  LMIC_startJoining();
+  for (;;) {
+    os_runloop_once();
+    // Check if HTTP/encoder requested a feed-log uplink
+    if (wantSendLog) {
+      wantSendLog = false;
+      xSemaphoreTake(dataMutex, portMAX_DELAY);
+      uint8_t hi = sendLogHerd;
+      xSemaphoreGive(dataMutex);
+      sendFeedLog(hi);
+    }
+  }
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("=== FeedMix Wagon ===");
+
+  dataMutex = xSemaphoreCreateMutex();
 
   memset(ingredients, 0, sizeof(ingredients));
   memset(herds,       0, sizeof(herds));
@@ -466,7 +500,7 @@ void setup() {
   oled.setTextSize(1);
   oled.clearDisplay();
   oled.setCursor(0,  0); oled.print("FeedMix Wagon");
-  oled.setCursor(0, 12); oled.print("Init LoRa...");
+  oled.setCursor(0, 12); oled.print("Starting WiFi AP...");
   oled.display();
 
   pinMode(ENC_SW,  INPUT_PULLUP);
@@ -474,24 +508,10 @@ void setup() {
   pinMode(ENC_DT,  INPUT_PULLUP);
   encLast = digitalRead(ENC_CLK);
 
-  // Initialise LMIC first — it claims its SPI + timer resources before WiFi starts.
-  // Starting WiFi before os_init() causes a timer conflict (EXCCAUSE 6 null-ptr crash).
-  // T3 v1.6.1 LoRa SPI pins: SCK=5, MISO=19, MOSI=27, NSS=18
-  // Must be explicit — default SPI.begin() uses CLK=18 which conflicts with LoRa NSS.
-  SPI.begin(5, 19, 27, 18);
-  os_init();
-  LMIC_reset();
-
-  oled.clearDisplay();
-  oled.setCursor(0,  0); oled.print("FeedMix Wagon");
-  oled.setCursor(0, 12); oled.print("Starting WiFi AP...");
-  oled.display();
-
-  // WiFi AP — disable power-save so the radio doesn't sleep between HTTP requests
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
   WiFi.softAP(AP_SSID, AP_PASS);
-  delay(100);   // let AP IP stack settle
+  delay(100);
   Serial.printf("AP: %s  IP: %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
 
   httpServer.on("/",              handleRoot);
@@ -507,15 +527,15 @@ void setup() {
   oled.setCursor(0,  0); oled.print("FeedMix Wagon");
   oled.setCursor(0, 12); oled.print("WiFi AP ready");
   oled.setCursor(0, 22); oled.print("192.168.4.1");
-  oled.setCursor(0, 34); oled.print("Joining LoRa...");
+  oled.setCursor(0, 34); oled.print("Starting LoRa...");
   oled.display();
 
-  LMIC_startJoining();
+  // LMIC runs on Core 0; WiFi/HTTP runs on Core 1 (loop())
+  xTaskCreatePinnedToCore(loraTask, "LoRa", 8192, NULL, 2, NULL, 0);
 }
 
-// ── Loop ──────────────────────────────────────────────────────────────────────
+// ── Loop (Core 1 — WiFi + HTTP + encoder + OLED) ─────────────────────────────
 void loop() {
-  os_runloop_once();
   httpServer.handleClient();
 
   unsigned long now = millis();
@@ -545,8 +565,8 @@ void loop() {
       memset(stepDone, 0, sizeof(stepDone));
       snprintf(loraStatus, sizeof(loraStatus), "Steps reset");
     } else if (held > 50) {
-      uint8_t hi = numHerd > 0 ? activeHerdIdx % numHerd : 0;
-      sendFeedLog(hi);
+      sendLogHerd = numHerd > 0 ? activeHerdIdx % numHerd : 0;
+      wantSendLog = true;
       memset(stepDone, 0, sizeof(stepDone));
     }
     swWasDown = false;
