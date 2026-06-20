@@ -1,0 +1,2118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MVMS VAT Tap Monitor</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3d;
+      --text: #e2e4ef;
+      --muted: #6b7280;
+      --accent: #3b82f6;
+      --green: #22c55e;
+      --red: #ef4444;
+      --orange: #f97316;
+      --yellow: #eab308;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Login ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    .login-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 380px;
+    }
+    .login-card h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .login-card p  { color: var(--muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input[type=text], input[type=password] {
+      width: 100%; padding: 0.65rem 0.75rem;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 1rem;
+      margin-bottom: 1rem; outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      cursor: pointer; border: none; border-radius: 8px;
+      font-size: 0.9rem; font-weight: 600;
+      padding: 0.65rem 1.25rem; transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    .btn-primary  { background: var(--accent);  color: #fff; width: 100%; }
+    .btn-danger   { background: var(--red);     color: #fff; }
+    .btn-sm       { font-size: 0.78rem; padding: 0.3rem 0.65rem; }
+    .error-msg    { color: var(--red); font-size: 0.85rem; margin-top: 0.5rem; }
+
+    /* ── App shell ── */
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.1rem; }
+    header .user { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 0.75rem; }
+    main { flex: 1; padding: 1rem; max-width: 900px; margin: 0 auto; width: 100%; }
+
+    /* ── Cards ── */
+    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-bottom: 1rem; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem;
+    }
+    .card-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+    .card-value { font-size: 1.6rem; font-weight: 700; }
+    .card-sub   { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
+
+    .status-dot {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; margin-right: 0.4rem;
+    }
+    .dot-green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-red    { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
+    .dot-orange { background: var(--orange);box-shadow: 0 0 6px var(--orange);}
+    .dot-grey   { background: var(--muted); }
+
+    /* ── Alert banner ── */
+    #alert-banner {
+      display: none;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    #alert-banner.show { display: flex; align-items: center; gap: 0.75rem; justify-content: space-between; }
+
+    /* ── Chart ── */
+    .chart-wrap {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem; margin-bottom: 1rem;
+    }
+    .chart-wrap h2 { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    canvas { width: 100% !important; }
+    .chart-controls {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;
+    }
+    .chart-controls select, .chart-controls input[type=datetime-local] {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.82rem;
+    }
+    .chart-controls button { font-size: 0.82rem; padding: 0.3rem 0.75rem; background: var(--accent); color: #fff; }
+
+    /* ── Chart mode toggle ── */
+    .chart-toggle {
+      background: var(--bg);
+      border: 1px solid var(--border) !important;
+      color: var(--muted) !important;
+      font-size: 0.82rem !important;
+      padding: 0.3rem 0.75rem !important;
+      font-weight: 500;
+    }
+    .chart-toggle.active {
+      background: var(--accent) !important;
+      color: #fff !important;
+      border-color: var(--accent) !important;
+    }
+    .ctrl-row {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+      margin-bottom: 0.4rem;
+    }
+    .ctrl-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    .avg14-label {
+      font-size: 0.82rem; display: flex; align-items: center;
+      gap: 0.4rem; cursor: pointer; color: var(--text);
+    }
+    .avg14-label input { cursor: pointer; }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; margin-bottom: 1rem;
+    }
+    .table-wrap h2 { font-size: 0.9rem; color: var(--muted); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th { text-align: left; padding: 0.5rem 0.75rem; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+    td { padding: 0.45rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      display: inline-block; border-radius: 4px; padding: 0.1rem 0.4rem;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .tag-open    { background: rgba(34,197,94,0.15);  color: var(--green);  }
+    .tag-close   { background: rgba(107,114,128,0.2); color: var(--muted);  }
+    .tag-alert   { background: rgba(239,68,68,0.15);  color: var(--red);    }
+    .tag-log_end { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .tag-periodic{ background: rgba(234,179,8,0.12);  color: var(--yellow); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 0; border-bottom: 1px solid var(--border);
+      background: var(--card); padding: 0 1rem;
+    }
+    .tab-btn {
+      background: none; border: none; color: var(--muted);
+      padding: 0.65rem 1rem; font-size: 0.88rem; font-weight: 500;
+      border-bottom: 2px solid transparent; cursor: pointer;
+      border-radius: 0; transition: color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); opacity: 1; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Water meter totals ── */
+    .water-totals {
+      display: grid; gap: 1rem;
+      grid-template-columns: repeat(3, 1fr);
+      margin-bottom: 1rem;
+    }
+    .water-totals .card-value { font-size: 1.4rem; }
+
+    @media (max-width: 480px) {
+      .card-value { font-size: 1.3rem; }
+      td, th { padding: 0.4rem 0.5rem; }
+      .water-totals { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ── Irrigator Map tab ── */
+    #tab-irrigator {
+      margin: -1rem;
+      height: calc(100vh - 98px);
+    }
+    .irr-wrap { display: flex; height: 100%; }
+    .irr-sidebar {
+      width: 260px; min-width: 260px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 10px;
+      font-size: 0.85rem;
+    }
+    #irr-map { flex: 1; height: 100%; }
+    .irr-section-title {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); margin-bottom: 6px;
+    }
+    .irr-stat { display: flex; justify-content: space-between; padding: 2px 0; color: var(--muted); }
+    .irr-stat span:last-child { font-weight: 600; color: var(--text); }
+    .irr-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px;
+    }
+    .irr-badge {
+      font-size: 0.7rem; font-weight: 700; padding: 2px 6px;
+      border-radius: 10px; display: inline-block;
+    }
+    .irr-badge-green  { background:#1b5e20;color:#a5d6a7; }
+    .irr-badge-gray   { background:#333;color:#888; }
+    .irr-badge-amber  { background:#e65100;color:#ffe082; }
+    .irr-badge-red    { background:#b71c1c;color:#ffcdd2; }
+    .irr-alert-item {
+      background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4);
+      border-radius:6px; padding:7px; margin-bottom:5px; font-size:0.78rem;
+    }
+    .irr-alert-loc  { color:#ef4444; font-weight:600; }
+    .irr-alert-time { color:var(--muted); font-size:0.7rem; }
+    .irr-select {
+      width:100%; background:var(--bg); border:1px solid var(--border);
+      color:var(--text); padding:5px 7px; border-radius:6px; font-size:0.82rem;
+    }
+    .irr-btn {
+      padding:6px 10px; border:none; border-radius:6px;
+      cursor:pointer; font-size:0.8rem; font-weight:600;
+    }
+    .irr-btn-green { background:#2e7d32;color:#fff; }
+    .irr-btn-gray  { background:#333;color:#ccc; }
+    .irr-btn-red   { background:#c62828;color:#fff; }
+    .irr-hidden { display:none!important; }
+    #irr-toast {
+      position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+      background:#b91c1c;color:#fff;padding:10px 20px;border-radius:8px;
+      font-size:0.85rem;z-index:10000;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;
+    }
+    #irr-toast.irr-toast-show { opacity:1;transform:translateX(-50%) translateY(0); }
+
+    /* Leaflet overrides for dark theme */
+    .leaflet-container { background:#222; }
+    .leaflet-popup-content-wrapper { background:#1a1d27; color:#e2e4ef; border:1px solid #2a2d3d; }
+    .leaflet-popup-tip { background:#1a1d27; }
+
+    /* ── Feed Mixer tab ── */
+    .fm-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 600px) { .fm-grid { grid-template-columns: 1fr; } }
+    .fm-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .fm-section h3 {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+    .fm-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .fm-card:last-child { margin-bottom: 0; }
+    .fm-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(59,130,246,0.15);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .fm-badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .fm-badge-orange { background: rgba(249,115,22,0.15); color: var(--orange); }
+    .fm-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+      padding: 0.3rem 0.55rem;
+      outline: none;
+      width: auto;
+    }
+    .fm-input:focus { border-color: var(--accent); }
+    .fm-input-wide { width: 100%; margin-bottom: 0.5rem; display: block; }
+    .fm-herd-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.6rem;
+    }
+    .fm-herd-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.65rem 0.85rem;
+      cursor: pointer;
+      flex-wrap: wrap;
+    }
+    .fm-herd-header:hover { background: rgba(255,255,255,0.03); border-radius: 8px 8px 0 0; }
+    .fm-herd-body {
+      display: none;
+      padding: 0.75rem 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    .fm-herd-body.open { display: block; }
+    .fm-ration-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .fm-ration-row select { flex: 1; min-width: 120px; }
+    .fm-collapsible-toggle {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 0;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .fm-collapsible-toggle:hover { color: var(--text); opacity: 1; }
+    .fm-collapsible-body { display: none; margin-top: 0.75rem; }
+    .fm-collapsible-body.open { display: block; }
+    .fm-inline-form {
+      background: rgba(59,130,246,0.05);
+      border: 1px solid rgba(59,130,246,0.2);
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+      display: none;
+    }
+    .fm-inline-form.open { display: block; }
+    .fm-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .fm-row:last-child { margin-bottom: 0; }
+    .fm-spacer { flex: 1; }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-warning { background: var(--orange); color: #fff; }
+    .btn-muted { background: var(--border); color: var(--text); }
+
+    /* ── Ingredient modal ── */
+    .ing-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 200;
+      align-items: flex-start; justify-content: center; padding: 1rem;
+    }
+    .ing-modal-overlay.open { display: flex; }
+    .ing-modal-inner {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem;
+      width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto;
+      margin-top: 60px;
+    }
+    .ing-modal-inner h3 { font-size: 1rem; margin-bottom: 0.75rem; }
+
+    /* ── Device settings tab ── */
+    .dev-pwd-overlay {
+      position: absolute; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 0.75rem; z-index: 5;
+      min-height: 300px;
+    }
+    .dev-pwd-overlay h3 { font-size: 1rem; color: var(--muted); }
+    .dev-table-wrap { overflow-x: auto; }
+    .dev-table-wrap table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .dev-table-wrap th { text-align: left; padding: 0.45rem 0.6rem; color: var(--muted);
+      border-bottom: 1px solid var(--border); }
+    .dev-table-wrap td { padding: 0.45rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .dev-type-badge {
+      display: inline-block; border-radius: 4px; padding: 0.1rem 0.45rem;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .dev-type-water    { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .dev-type-vat      { background: rgba(234,179,8,0.15);  color: var(--yellow); }
+    .dev-type-irrigator{ background: rgba(34,197,94,0.15);  color: var(--green);  }
+    .dev-type-feedmixer{ background: rgba(249,115,22,0.15); color: var(--orange); }
+    .dev-type-other    { background: rgba(107,114,128,0.2); color: var(--muted);  }
+    .dev-form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    @media (max-width:560px){ .dev-form-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- ── Login ── -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>MVMS VAT Tap Monitor</h1>
+    <p>Sign in to view live tap data</p>
+    <label>Username</label>
+    <input type="text" id="username" autocomplete="username" placeholder="admin">
+    <label>Password</label>
+    <input type="password" id="password" autocomplete="current-password" placeholder="••••••">
+    <button class="btn-primary" onclick="login()">Sign in</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ── App ── -->
+<div id="app">
+  <header>
+    <h1>MVMS Monitor</h1>
+    <div class="user">
+      <span id="hdr-user"></span>
+      <button class="btn-danger btn-sm" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('vat')">VAT Tap</button>
+    <button class="tab-btn" onclick="switchTab('water')">Water Meters</button>
+    <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
+    <button class="tab-btn" onclick="switchTab('feedmixer')">Feed Mixer</button>
+    <button class="tab-btn" onclick="switchTab('devsettings')">Device Settings</button>
+  </nav>
+
+  <main>
+    <!-- ── VAT Tap tab ── -->
+    <div id="tab-vat" class="tab-panel active">
+      <div id="alert-banner">
+        <span id="alert-text"></span>
+        <button class="btn-sm btn-danger" onclick="acknowledgeLatestAlert()">Acknowledge</button>
+      </div>
+
+      <div class="grid" id="status-cards">
+        <div class="card">
+          <div class="card-label">Tap status</div>
+          <div class="card-value" id="s-tap">—</div>
+          <div class="card-sub" id="s-tap-sub"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Temperature</div>
+          <div class="card-value" id="s-temp">—</div>
+          <div class="card-sub">pipe sensor</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Solenoid</div>
+          <div class="card-value" id="s-sol">—</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Logging</div>
+          <div class="card-value" id="s-log">—</div>
+          <div class="card-sub" id="s-log-sub"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Last event</div>
+          <div class="card-value" id="s-event" style="font-size:1rem">—</div>
+          <div class="card-sub" id="s-event-time"></div>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <h2>Temperature history</h2>
+        <div class="chart-controls">
+          <select id="chart-range" onchange="onRangeChange()">
+            <option value="2">Last 2 hours</option>
+            <option value="6">Last 6 hours</option>
+            <option value="24">Last 24 hours</option>
+            <option value="168">Last 7 days</option>
+            <option value="720">Last 30 days</option>
+            <option value="custom">Custom range</option>
+          </select>
+          <span id="custom-range" style="display:none;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <input type="datetime-local" id="range-from">
+            <span style="color:var(--muted)">to</span>
+            <input type="datetime-local" id="range-to">
+            <button onclick="loadChart()">Apply</button>
+          </span>
+        </div>
+        <canvas id="tempChart" height="180"></canvas>
+      </div>
+
+      <div class="table-wrap">
+        <h2>Recent readings</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>Event</th><th>Temp °C</th><th>Tap open min</th><th>Log min</th>
+            </tr>
+          </thead>
+          <tbody id="readings-tbody">
+            <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Water Meters tab ── -->
+    <div id="tab-water" class="tab-panel">
+
+      <!-- All-time totals -->
+      <div class="water-totals" style="margin-top:0.5rem">
+        <div class="card">
+          <div class="card-label">Tank (all time)</div>
+          <div class="card-value" id="w-tank-total">—</div>
+          <div class="card-sub">litres</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Farm (all time)</div>
+          <div class="card-value" id="w-farm-total">—</div>
+          <div class="card-sub">litres</div>
+        </div>
+        <div class="card" id="w-shed-card">
+          <div class="card-label">Shed (all time)</div>
+          <div class="card-value" id="w-shed-total">—</div>
+          <div class="card-sub">tank − farm</div>
+        </div>
+      </div>
+
+      <!-- Chart + controls -->
+      <div class="chart-wrap">
+        <h2 id="water-chart-title">Water usage — volume (L)</h2>
+
+        <!-- Chart type -->
+        <div class="ctrl-row">
+          <span class="ctrl-label">Chart:</span>
+          <button id="btn-vol" class="chart-toggle active" onclick="setWaterMode('volume')">Volume (L)</button>
+          <button id="btn-flow" class="chart-toggle" onclick="setWaterMode('flow')">Flow Rate (L/hr)</button>
+        </div>
+
+        <!-- Bucket + Window -->
+        <div class="ctrl-row">
+          <span class="ctrl-label">Period:</span>
+          <select id="water-bucket" onchange="loadWaterChart()">
+            <option value="5min">5 min</option>
+            <option value="10min">10 min</option>
+            <option value="30min">30 min</option>
+            <option value="1hr" selected>1 hr</option>
+            <option value="4hr">4 hr</option>
+            <option value="1day">1 day</option>
+          </select>
+          <span class="ctrl-label">Window:</span>
+          <select id="water-window" onchange="onWaterWindowChange()">
+            <option value="1hr">1 hr</option>
+            <option value="6hr">6 hr</option>
+            <option value="24hr" selected>24 hr</option>
+            <option value="3day">3 days</option>
+            <option value="7day">7 days</option>
+            <option value="30day">30 days</option>
+          </select>
+        </div>
+
+        <!-- 14-day average -->
+        <div class="ctrl-row">
+          <label class="avg14-label">
+            <input type="checkbox" id="water-avg14" onchange="loadWaterChart()">
+            Compare 14-day rolling average
+          </label>
+        </div>
+
+        <canvas id="waterChart" height="220"></canvas>
+      </div>
+
+      <!-- Daily breakdown table -->
+      <div class="table-wrap">
+        <h2>Daily breakdown (last 30 days)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Tank (L)</th>
+              <th>Farm (L)</th>
+              <th id="shed-th" class="shed-col">Shed (L)</th>
+            </tr>
+          </thead>
+          <tbody id="water-tbody">
+            <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Irrigator Map tab ── -->
+    <div id="tab-irrigator" class="tab-panel">
+      <div class="irr-wrap">
+
+        <!-- Sidebar -->
+        <div class="irr-sidebar">
+          <!-- Live status -->
+          <div class="irr-card">
+            <div class="irr-section-title">
+              Live Status
+              <span id="irr-live-badge" class="irr-badge irr-badge-gray" style="margin-left:6px">No GPS</span>
+            </div>
+            <div class="irr-stat"><span>Pump</span>    <span id="irr-pump">—</span></div>
+            <div class="irr-stat"><span>Speed</span>   <span id="irr-speed">—</span></div>
+            <div class="irr-stat"><span>Battery</span> <span id="irr-batt">—</span></div>
+            <div class="irr-stat"><span>Last fix</span><span id="irr-time">—</span></div>
+          </div>
+
+          <!-- Session -->
+          <div class="irr-card">
+            <div class="irr-section-title">Session</div>
+            <select id="irr-session-sel" class="irr-select"><option value="">— select —</option></select>
+          </div>
+
+          <!-- Spread stats -->
+          <div class="irr-card irr-hidden" id="irr-spread-card">
+            <div class="irr-section-title">Spread Stats</div>
+            <div id="irr-depth-legend" style="margin-bottom:8px"></div>
+            <div class="irr-stat"><span>Area</span>      <span id="irr-area">—</span></div>
+            <div class="irr-stat"><span>Volume</span>    <span id="irr-vol">—</span></div>
+            <div class="irr-stat"><span>Rate</span>      <span id="irr-rate">—</span></div>
+            <div class="irr-stat"><span>Depth</span>     <span id="irr-depth">—</span></div>
+            <div class="irr-stat"><span>Duration</span>  <span id="irr-dur">—</span></div>
+          </div>
+
+          <!-- Alerts -->
+          <div class="irr-card">
+            <div class="irr-section-title">
+              Alerts
+              <span id="irr-alert-count" class="irr-badge irr-badge-red irr-hidden" style="margin-left:4px">0</span>
+            </div>
+            <div id="irr-alerts-list"><span style="color:var(--muted);font-size:0.78rem">No active alerts</span></div>
+          </div>
+        </div>
+
+        <!-- Map -->
+        <div id="irr-map"></div>
+      </div>
+    </div>
+
+    <!-- ── Feed Mixer tab ── -->
+    <div id="tab-feedmixer" class="tab-panel">
+      <!-- Mixer device settings -->
+      <details style="margin-bottom:0.75rem;border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.75rem">
+        <summary style="cursor:pointer;font-size:0.85rem;color:var(--muted);user-select:none">&#x2699; Mixer Wagon LoRa Settings</summary>
+        <div style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.4rem">
+          <label style="font-size:0.8rem;color:var(--muted)">Device EUI (T3 wagon radio)</label>
+          <input type="text" id="fm-dev-eui" class="input-field" placeholder="0000000000000000" style="font-family:monospace">
+          <label style="font-size:0.8rem;color:var(--muted);margin-top:0.3rem">ChirpStack API Key</label>
+          <input type="password" id="fm-cs-api-key" class="input-field" placeholder="Paste API key from ChirpStack → API Keys">
+          <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+            <button class="btn-sm" style="background:var(--accent);color:#fff" onclick="fmSaveSettings()">Save</button>
+            <span id="fm-settings-msg" style="font-size:0.8rem;color:var(--accent)"></span>
+          </div>
+        </div>
+      </details>
+
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center">
+        <button class="btn-sm" style="background:var(--accent);color:#fff"
+                onclick="fmToggleHerdForm()">+ Add Herd</button>
+        <button class="btn-sm btn-warning" onclick="fmPushDevice(null)">&#x2191; Push all herds</button>
+        <button class="btn-sm" style="background:var(--border);color:var(--text);margin-left:auto"
+                onclick="fmOpenIngModal()">&#x1F4DA; Feed Library</button>
+      </div>
+
+      <!-- Herd form -->
+      <div class="fm-inline-form" id="fm-herd-form">
+        <div class="fm-row">
+          <input type="text" id="fm-herd-name" class="fm-input" placeholder="Herd name" style="flex:1">
+        </div>
+        <div class="fm-row">
+          <label style="font-size:0.82rem;color:var(--muted);min-width:70px">Cows</label>
+          <input type="number" id="fm-herd-cows" class="fm-input" placeholder="100" min="1" style="width:80px">
+          <label style="font-size:0.82rem;color:var(--muted);min-width:80px;margin-left:0.5rem">Meals/day</label>
+          <input type="number" id="fm-herd-meals" class="fm-input" placeholder="2" min="1" max="10" style="width:70px">
+        </div>
+        <div class="fm-row">
+          <button class="btn-sm btn-success" onclick="fmSaveHerd()">Save</button>
+          <button class="btn-sm btn-muted" onclick="fmToggleHerdForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Herds list -->
+      <div id="fm-herd-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
+
+      <!-- Feed Log -->
+      <div class="fm-section" style="margin-top:1rem">
+        <h3>Feed Log</h3>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Date / Time</th><th>Herd</th><th>Total kg</th><th>Steps</th>
+              </tr>
+            </thead>
+            <tbody id="fm-log-tbody">
+              <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- #tab-feedmixer -->
+
+    <!-- ── Ingredient Library Modal ── -->
+    <div class="ing-modal-overlay" id="fm-ing-modal">
+      <div class="ing-modal-inner">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+          <h3 style="margin:0">Feed Library</h3>
+          <button class="btn-sm btn-muted" onclick="fmCloseIngModal()">&#x2715; Close</button>
+        </div>
+        <button class="btn-sm" style="background:var(--accent);color:#fff;margin-bottom:0.6rem"
+                onclick="fmToggleIngForm()">+ Add Feed</button>
+        <div class="fm-inline-form" id="fm-ing-form">
+          <div class="fm-row">
+            <input type="text" id="fm-ing-name" class="fm-input" placeholder="Name (e.g. Maize silage)" style="flex:1">
+          </div>
+          <div class="fm-row">
+            <label style="font-size:0.82rem;color:var(--muted);min-width:50px">DM %</label>
+            <input type="number" id="fm-ing-dm" class="fm-input" placeholder="32" min="0" max="100" step="0.1" style="width:80px">
+            <label class="avg14-label" style="margin-left:0.5rem">
+              <input type="checkbox" id="fm-ing-active" checked> Active
+            </label>
+          </div>
+          <div class="fm-row">
+            <button class="btn-sm btn-success" onclick="fmSaveIngredient()">Save</button>
+            <button class="btn-sm btn-muted" onclick="fmToggleIngForm()">Cancel</button>
+          </div>
+        </div>
+        <div id="fm-ing-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
+      </div>
+    </div>
+
+    <!-- ── Device Settings tab ── -->
+    <div id="tab-devsettings" class="tab-panel" style="position:relative">
+
+      <!-- Password lock overlay — shown until verified -->
+      <div id="dev-pwd-overlay" class="dev-pwd-overlay">
+        <h3>Enter your password to continue</h3>
+        <input type="password" id="dev-pwd-input" class="fm-input" placeholder="Password"
+               style="max-width:260px"
+               onkeydown="if(event.key==='Enter')devVerifyPwd()">
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-sm btn-success" onclick="devVerifyPwd()">Unlock</button>
+          <button class="btn-sm btn-muted" onclick="switchTab('vat')">Cancel</button>
+        </div>
+        <span id="dev-pwd-err" style="color:var(--red);font-size:0.82rem;display:none">Incorrect password</span>
+      </div>
+
+      <!-- Actual content (revealed after auth) -->
+      <div id="dev-content" style="display:none">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center">
+          <h2 style="font-size:1rem;flex:1">Registered Devices</h2>
+          <button class="btn-sm" style="background:var(--accent);color:#fff"
+                  onclick="devToggleForm()">+ Add Device</button>
+        </div>
+
+        <!-- Add / Edit form -->
+        <div class="fm-inline-form" id="dev-form" style="margin-bottom:1rem">
+          <div class="dev-form-grid">
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">Name / Label</label>
+              <input type="text" id="dev-name" class="fm-input" placeholder="e.g. Cow Shed Water Meter" style="width:100%">
+            </div>
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">Type</label>
+              <select id="dev-type" class="fm-input" style="width:100%">
+                <option value="water">Water Meter</option>
+                <option value="vat">VAT Tap</option>
+                <option value="irrigator">Irrigator</option>
+                <option value="feedmixer">Feed Mixer</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">DevEUI</label>
+              <input type="text" id="dev-eui" class="fm-input" placeholder="0011223344556677" style="width:100%;font-family:monospace">
+            </div>
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">AppEUI / JoinEUI</label>
+              <input type="text" id="dev-app-eui" class="fm-input" placeholder="0000000000000000" style="width:100%;font-family:monospace">
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:0.78rem;color:var(--muted)">AppKey (OTAA)</label>
+              <input type="text" id="dev-app-key" class="fm-input" placeholder="00112233445566778899aabbccddeeff" style="width:100%;font-family:monospace">
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:0.78rem;color:var(--muted)">Notes</label>
+              <input type="text" id="dev-notes" class="fm-input" placeholder="Location, purpose…" style="width:100%">
+            </div>
+          </div>
+          <div class="fm-row">
+            <button class="btn-sm btn-success" onclick="devSave()">Save</button>
+            <button class="btn-sm btn-muted" onclick="devToggleForm()">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Device table -->
+        <div class="dev-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Type</th><th>DevEUI</th><th>AppEUI</th><th>AppKey</th><th>Notes</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="dev-tbody">
+              <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- #tab-devsettings -->
+
+  </main>
+</div>
+
+<div id="irr-toast"></div>
+
+<script>
+// ──────────────────────────────────────────────────────────────────────
+// VAT Tap chart
+// ──────────────────────────────────────────────────────────────────────
+function drawTempChart(labels, values) {
+  const canvas = document.getElementById('tempChart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = 180;
+  canvas.width = W; canvas.height = H;
+
+  if (!values.length) {
+    ctx.fillStyle = '#6b7280'; ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText('No data in range', W/2, H/2);
+    return;
+  }
+
+  const pad = { top:20, right:20, bottom:35, left:45 };
+  const pW = W-pad.left-pad.right, pH = H-pad.top-pad.bottom;
+  const minV = Math.min(...values)-1, maxV = Math.max(...values)+1, range = maxV-minV||1;
+  const xS = i => pad.left+(i/(values.length-1||1))*pW;
+  const yS = v => pad.top+pH-((v-minV)/range)*pH;
+
+  ctx.strokeStyle='#2a2d3d'; ctx.lineWidth=1;
+  for (let g=0;g<=4;g++) {
+    const y=pad.top+(g/4)*pH;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+pW,y);ctx.stroke();
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText((maxV-(g/4)*range).toFixed(1),pad.left-5,y+4);
+  }
+  if (15>=minV && 15<=maxV) {
+    const yA=yS(15);
+    ctx.strokeStyle='rgba(239,68,68,0.5)';ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(pad.left,yA);ctx.lineTo(pad.left+pW,yA);ctx.stroke();
+    ctx.setLineDash([]);ctx.fillStyle='#ef4444';ctx.font='9px sans-serif';ctx.textAlign='left';
+    ctx.fillText('15°C alert',pad.left+4,yA-3);
+  }
+  const grad=ctx.createLinearGradient(0,pad.top,0,pad.top+pH);
+  grad.addColorStop(0,'rgba(59,130,246,0.35)');grad.addColorStop(1,'rgba(59,130,246,0)');
+  ctx.beginPath();ctx.moveTo(xS(0),yS(values[0]));
+  for (let i=1;i<values.length;i++) ctx.lineTo(xS(i),yS(values[i]));
+  ctx.lineTo(xS(values.length-1),pad.top+pH);ctx.lineTo(xS(0),pad.top+pH);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+  ctx.beginPath();ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;ctx.lineJoin='round';
+  ctx.moveTo(xS(0),yS(values[0]));
+  for (let i=1;i<values.length;i++) ctx.lineTo(xS(i),yS(values[i]));
+  ctx.stroke();
+  const step=Math.max(1,Math.floor(labels.length/5));
+  ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='center';
+  for (let i=0;i<labels.length;i+=step) ctx.fillText(labels[i],xS(i),H-8);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Water meter charts
+// ──────────────────────────────────────────────────────────────────────
+
+function fmtBucket(bucket) {
+  if (!bucket) return '';
+  const d = new Date(bucket.replace(' ','T')+'Z');
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  // within last 7 days: show day + time
+  const diffDays = (now - d) / 86400000;
+  if (diffDays < 7) return d.toLocaleDateString([],{weekday:'short'})+' '
+    +d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString([],{month:'short',day:'numeric'});
+}
+
+function mergeAvg14(data, avg14, mode, bucketSecs) {
+  if (!avg14 || !avg14.length) return data.map(r => ({...r, avgTank:null, avgFarm:null}));
+
+  if (avg14[0].slot === -1) {
+    // flat line (daily bucket)
+    const aT = mode==='flow' ? avg14[0].avg_tank_lph : avg14[0].avg_tank_litres;
+    const aF = mode==='flow' ? avg14[0].avg_farm_lph : avg14[0].avg_farm_litres;
+    return data.map(r => ({...r, avgTank:aT, avgFarm:aF}));
+  }
+
+  const slotMap = {};
+  avg14.forEach(r => { slotMap[r.slot] = r; });
+  return data.map(r => {
+    const d = new Date(r.bucket.replace(' ','T')+'Z');
+    const sod = d.getUTCHours()*3600 + d.getUTCMinutes()*60 + d.getUTCSeconds();
+    const slot = Math.floor(sod / bucketSecs);
+    const avg = slotMap[slot];
+    return {
+      ...r,
+      avgTank: avg ? (mode==='flow' ? avg.avg_tank_lph : avg.avg_tank_litres) : null,
+      avgFarm: avg ? (mode==='flow' ? avg.avg_farm_lph : avg.avg_farm_litres) : null,
+    };
+  });
+}
+
+function drawWaterBars(canvas, pts, showShed) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = 220;
+  canvas.width = W; canvas.height = H;
+
+  if (!pts.length) {
+    ctx.fillStyle='#6b7280';ctx.font='13px sans-serif';
+    ctx.textAlign='center';ctx.fillText('No data for this period',W/2,H/2);
+    return;
+  }
+
+  const pad={top:25,right:20,bottom:40,left:60};
+  const pW=W-pad.left-pad.right, pH=H-pad.top-pad.bottom;
+  const n=pts.length, colW=pW/n;
+  const nBars=showShed?3:2;
+  const barW=Math.max(2,Math.floor(colW*0.72/nBars));
+  const gap=Math.max(1,Math.floor(barW*0.25));
+  const groupW=nBars*(barW+gap)-gap;
+
+  const hasAvg=pts.some(r=>r.avgTank!==null);
+  const allV=pts.flatMap(r=>[
+    r.tank_litres,r.farm_litres,
+    showShed?Math.max(0,r.shed_litres):0,
+    hasAvg?r.avgTank??0:0,
+    hasAvg?r.avgFarm??0:0,
+  ]);
+  const maxV=Math.max(...allV,1);
+  const yS=v=>pad.top+pH-(Math.max(0,v)/maxV)*pH;
+  const xCenter=i=>pad.left+(i+0.5)*colW;
+
+  // grid
+  ctx.strokeStyle='#2a2d3d';ctx.lineWidth=1;
+  for (let g=0;g<=4;g++) {
+    const y=pad.top+(g/4)*pH;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+pW,y);ctx.stroke();
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText(Math.round(maxV*(1-g/4)).toLocaleString(),pad.left-5,y+4);
+  }
+
+  // bars
+  for (let i=0;i<n;i++) {
+    const r=pts[i];
+    const x0=pad.left+i*colW+(colW-groupW)/2;
+
+    const th=(r.tank_litres/maxV)*pH;
+    ctx.fillStyle='#3b82f6';
+    ctx.fillRect(x0,pad.top+pH-th,barW,th);
+
+    const fh=(r.farm_litres/maxV)*pH;
+    ctx.fillStyle='#22c55e';
+    ctx.fillRect(x0+barW+gap,pad.top+pH-fh,barW,fh);
+
+    if (showShed) {
+      const sh=(Math.max(0,r.shed_litres)/maxV)*pH;
+      ctx.fillStyle='#f97316';
+      ctx.fillRect(x0+(barW+gap)*2,pad.top+pH-sh,barW,sh);
+    }
+  }
+
+  // avg14 dashed lines
+  if (hasAvg) {
+    function drawAvgLine(vals, color) {
+      ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.setLineDash([5,3]);
+      ctx.beginPath();let s=false;
+      vals.forEach((v,i)=>{
+        if (v===null) return;
+        const x=xCenter(i),y=yS(v);
+        s?ctx.lineTo(x,y):(ctx.moveTo(x,y),s=true);
+      });
+      ctx.stroke();ctx.setLineDash([]);
+    }
+    drawAvgLine(pts.map(r=>r.avgTank),'rgba(59,130,246,0.75)');
+    drawAvgLine(pts.map(r=>r.avgFarm),'rgba(34,197,94,0.75)');
+  }
+
+  // x labels
+  const step=Math.max(1,Math.floor(n/7));
+  ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='center';
+  for (let i=0;i<n;i+=step) ctx.fillText(fmtBucket(pts[i].bucket),xCenter(i),H-8);
+
+  // legend
+  const leg=[['#3b82f6','Tank'],['#22c55e','Farm']];
+  if (showShed) leg.push(['#f97316','Shed']);
+  if (hasAvg) leg.push(['rgba(120,140,220,0.9)','14d avg']);
+  leg.forEach(([c,l],i)=>{
+    ctx.fillStyle=c;ctx.fillRect(pad.left+i*65,5,10,8);
+    ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='left';
+    ctx.fillText(l,pad.left+i*65+13,13);
+  });
+}
+
+function drawWaterLines(canvas, pts) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth, H = 220;
+  canvas.width = W; canvas.height = H;
+
+  if (!pts.length) {
+    ctx.fillStyle='#6b7280';ctx.font='13px sans-serif';
+    ctx.textAlign='center';ctx.fillText('No data for this period',W/2,H/2);
+    return;
+  }
+
+  const pad={top:25,right:20,bottom:40,left:60};
+  const pW=W-pad.left-pad.right, pH=H-pad.top-pad.bottom;
+  const n=pts.length;
+  const hasAvg=pts.some(r=>r.avgTank!==null);
+
+  const allV=[
+    ...pts.map(r=>r.tank_lph),
+    ...pts.map(r=>r.farm_lph),
+    ...(hasAvg?pts.map(r=>r.avgTank??0):[]),
+    ...(hasAvg?pts.map(r=>r.avgFarm??0):[]),
+  ];
+  const maxV=Math.max(...allV,1);
+  const xS=i=>pad.left+(i/(n-1||1))*pW;
+  const yS=v=>pad.top+pH-(Math.max(0,v)/maxV)*pH;
+
+  // grid
+  ctx.strokeStyle='#2a2d3d';ctx.lineWidth=1;
+  for (let g=0;g<=4;g++) {
+    const y=pad.top+(g/4)*pH;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(pad.left+pW,y);ctx.stroke();
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText(Math.round(maxV*(1-g/4)).toLocaleString(),pad.left-5,y+4);
+  }
+
+  function drawLine(getV, color, dash=[]) {
+    ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;
+    ctx.lineJoin='round';ctx.setLineDash(dash);
+    let s=false;
+    pts.forEach((r,i)=>{
+      const v=getV(r);
+      if (v===null||v===undefined) return;
+      const x=xS(i),y=yS(v);
+      s?ctx.lineTo(x,y):(ctx.moveTo(x,y),s=true);
+    });
+    ctx.stroke();ctx.setLineDash([]);
+  }
+
+  // gradient fill under tank
+  const grad=ctx.createLinearGradient(0,pad.top,0,pad.top+pH);
+  grad.addColorStop(0,'rgba(59,130,246,0.2)');grad.addColorStop(1,'rgba(59,130,246,0)');
+  ctx.beginPath();
+  pts.forEach((r,i)=>i===0?ctx.moveTo(xS(0),yS(r.tank_lph)):ctx.lineTo(xS(i),yS(r.tank_lph)));
+  ctx.lineTo(xS(n-1),pad.top+pH);ctx.lineTo(xS(0),pad.top+pH);
+  ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+
+  drawLine(r=>r.tank_lph,'#3b82f6');
+  drawLine(r=>r.farm_lph,'#22c55e');
+  if (hasAvg) {
+    drawLine(r=>r.avgTank,'rgba(59,130,246,0.6)',[5,3]);
+    drawLine(r=>r.avgFarm,'rgba(34,197,94,0.6)',[5,3]);
+  }
+
+  // x labels
+  const step=Math.max(1,Math.floor(n/7));
+  ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='center';
+  for (let i=0;i<n;i+=step) ctx.fillText(fmtBucket(pts[i].bucket),xS(i),H-8);
+
+  // legend
+  const leg=[['#3b82f6','Tank L/hr'],['#22c55e','Farm L/hr']];
+  if (hasAvg) leg.push(['rgba(120,140,220,0.9)','14d avg']);
+  leg.forEach(([c,l],i)=>{
+    ctx.fillStyle=c;ctx.fillRect(pad.left+i*80,5,10,8);
+    ctx.fillStyle='#6b7280';ctx.font='9px sans-serif';ctx.textAlign='left';
+    ctx.fillText(l,pad.left+i*80+13,13);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// API helpers
+// ──────────────────────────────────────────────────────────────────────
+async function api(path, opts={}) {
+  const r = await fetch(path,{credentials:'include',...opts});
+  if (r.status===401){showLogin();return null;}
+  return r.json();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Auth
+// ──────────────────────────────────────────────────────────────────────
+async function login() {
+  const username=document.getElementById('username').value;
+  const password=document.getElementById('password').value;
+  const r=await fetch('/api/login',{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username,password}),
+  });
+  const data=await r.json();
+  if (!r.ok){document.getElementById('login-error').textContent=data.error||'Login failed';return;}
+  showApp(data.username);
+}
+async function logout(){await fetch('/api/logout',{method:'POST',credentials:'include'});showLogin();}
+function showLogin(){
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('app').style.display='none';
+}
+let sseStarted=false;
+function showApp(username){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='flex';
+  document.getElementById('hdr-user').textContent=username;
+  refreshAll();
+  if (!sseStarted){sseStarted=true;startSSE();}
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// VAT tap controls
+// ──────────────────────────────────────────────────────────────────────
+function onRangeChange(){
+  const val=document.getElementById('chart-range').value;
+  document.getElementById('custom-range').style.display=val==='custom'?'flex':'none';
+  if (val!=='custom') loadChart();
+}
+async function loadChart(){
+  const val=document.getElementById('chart-range').value;
+  let url;
+  if (val==='custom'){
+    const from=document.getElementById('range-from').value;
+    const to=document.getElementById('range-to').value;
+    if (!from||!to) return;
+    url=`/api/readings/chart?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  } else {
+    url=`/api/readings/chart?hours=${val}`;
+  }
+  const chart=await api(url);
+  if (chart&&chart.length){
+    drawTempChart(chart.map(r=>fmtTime(r.received_at)),chart.map(r=>r.temp_c).filter(v=>v!==null));
+  } else {
+    drawTempChart([],[]);
+  }
+}
+
+let latestAlertId=null;
+function fmtTime(ts){
+  if (!ts) return '—';
+  return new Date(ts+'Z').toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function tagHtml(name){
+  return `<span class="tag tag-${name}">${name.replace('_',' ')}</span>`;
+}
+
+async function refreshAll(){
+  const [latest,alerts]=await Promise.all([api('/api/readings/latest'),api('/api/alerts')]);
+  if (latest){
+    const tapOpen=latest.tap_open;
+    document.getElementById('s-tap').innerHTML=
+      `<span class="status-dot ${tapOpen?'dot-green':'dot-grey'}"></span>${tapOpen?'Open':'Closed'}`;
+    document.getElementById('s-tap-sub').textContent=tapOpen?`${latest.mins_open} min open`:'';
+    const tempC=latest.temp_c;
+    const tempColor=tempC>15?'var(--red)':(tempC>10?'var(--orange)':'var(--text)');
+    document.getElementById('s-temp').innerHTML=
+      `<span style="color:${tempColor}">${tempC!=null?tempC.toFixed(2)+'°C':'—'}</span>`;
+    document.getElementById('s-sol').innerHTML=
+      `<span class="status-dot ${latest.solenoid_on?'dot-green':'dot-grey'}"></span>${latest.solenoid_on?'Open':'Closed'}`;
+    const logging=latest.event_name!=='log_end'&&(tapOpen||latest.mins_log>0);
+    document.getElementById('s-log').textContent=logging?'Active':'Idle';
+    document.getElementById('s-log-sub').textContent=latest.mins_log?`${latest.mins_log} min`:'';
+    document.getElementById('s-event').innerHTML=tagHtml(latest.event_name||'unknown');
+    document.getElementById('s-event-time').textContent=fmtTime(latest.received_at);
+  }
+  const unack=(alerts||[]).find(a=>!a.acknowledged);
+  const banner=document.getElementById('alert-banner');
+  if (unack){
+    latestAlertId=unack.id;
+    document.getElementById('alert-text').textContent=
+      `TEMPERATURE ALERT: ${unack.temp_c?.toFixed(2)}°C after ${unack.mins_open} min — ${fmtTime(unack.triggered_at)}`;
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+  loadChart();
+  const readings=await api('/api/readings?limit=50');
+  const tbody=document.getElementById('readings-tbody');
+  if (readings&&readings.length){
+    tbody.innerHTML=readings.map(r=>`
+      <tr>
+        <td>${fmtTime(r.received_at)}</td>
+        <td>${tagHtml(r.event_name||'unknown')}</td>
+        <td style="color:${r.temp_c>15?'var(--red)':'inherit'}">${r.temp_c!=null?r.temp_c.toFixed(2):'—'}</td>
+        <td>${r.mins_open??'—'}</td>
+        <td>${r.mins_log??'—'}</td>
+      </tr>
+    `).join('');
+  } else {
+    tbody.innerHTML='<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">No readings yet</td></tr>';
+  }
+}
+async function acknowledgeLatestAlert(){
+  if (!latestAlertId) return;
+  await api(`/api/alerts/${latestAlertId}/acknowledge`,{method:'POST'});
+  refreshAll();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Water meter controls
+// ──────────────────────────────────────────────────────────────────────
+let waterMode='volume';
+
+function shedVisible(){
+  return ['24hr','3day','7day','30day'].includes(document.getElementById('water-window').value);
+}
+
+function setWaterMode(mode){
+  waterMode=mode;
+  document.getElementById('btn-vol').classList.toggle('active',mode==='volume');
+  document.getElementById('btn-flow').classList.toggle('active',mode==='flow');
+  loadWaterChart();
+}
+
+function onWaterWindowChange(){
+  const shed=shedVisible();
+  document.getElementById('w-shed-card').style.display=shed?'':'none';
+  document.querySelectorAll('.shed-col').forEach(el=>el.style.display=shed?'':'none');
+  loadWaterChart();
+}
+
+async function loadWaterChart(){
+  const bucket=document.getElementById('water-bucket').value;
+  const window=document.getElementById('water-window').value;
+  const avg14=document.getElementById('water-avg14').checked;
+  const shed=shedVisible();
+
+  const title=waterMode==='flow'?'Flow rate — L per hour':'Water usage — volume (L)';
+  document.getElementById('water-chart-title').textContent=title;
+
+  const result=await api(`/api/water/chart?bucket=${bucket}&window=${window}&avg14=${avg14}`);
+  if (!result) return;
+
+  const pts=mergeAvg14(result.data,result.avg14,waterMode,result.bucketSecs);
+  const canvas=document.getElementById('waterChart');
+  if (waterMode==='flow') {
+    drawWaterLines(canvas,pts);
+  } else {
+    drawWaterBars(canvas,pts,shed);
+  }
+}
+
+async function refreshWater(){
+  const [totals]=await Promise.all([
+    api('/api/water/totals'),
+    loadWaterChart(),
+  ]);
+  if (totals){
+    document.getElementById('w-tank-total').textContent=totals.tank_litres?.toLocaleString()??'—';
+    document.getElementById('w-farm-total').textContent=totals.farm_litres?.toLocaleString()??'—';
+    document.getElementById('w-shed-total').textContent=totals.shed_litres?.toLocaleString()??'—';
+  }
+
+  const shed=shedVisible();
+  const daily=await api('/api/water/daily?days=30');
+  const tbody=document.getElementById('water-tbody');
+  if (daily&&daily.length){
+    tbody.innerHTML=[...daily].reverse().map(r=>`
+      <tr>
+        <td>${r.day}</td>
+        <td>${r.tank_litres?.toLocaleString()}</td>
+        <td>${r.farm_litres?.toLocaleString()}</td>
+        <td class="shed-col" style="${shed?'':'display:none'};color:var(--orange)">${r.shed_litres?.toLocaleString()}</td>
+      </tr>
+    `).join('');
+  } else {
+    tbody.innerHTML=`<tr><td colspan="${shed?4:3}" style="color:var(--muted);text-align:center;padding:1.5rem">No data yet</td></tr>`;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Tab switching
+// ──────────────────────────────────────────────────────────────────────
+let activeTab='vat';
+
+function switchTab(tab){
+  if (tab==='devsettings' && !isDevAuthed()){
+    activeTab=tab;
+    const tabs=['vat','water','irrigator','feedmixer','devsettings'];
+    document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+      b.classList.toggle('active', tabs[i]===tab);
+    });
+    tabs.forEach(t=>{
+      document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+    });
+    document.getElementById('dev-pwd-overlay').style.display='flex';
+    document.getElementById('dev-content').style.display='none';
+    setTimeout(()=>document.getElementById('dev-pwd-input').focus(),100);
+    return;
+  }
+  activeTab=tab;
+  const tabs=['vat','water','irrigator','feedmixer','devsettings'];
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active', tabs[i]===tab);
+  });
+  tabs.forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+  });
+  if (tab==='water')       refreshWater();
+  if (tab==='irrigator')   irrInit();
+  if (tab==='feedmixer')   fmInit();
+  if (tab==='devsettings') devInit();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Boot + polling
+// ──────────────────────────────────────────────────────────────────────
+(async()=>{
+  const me=await api('/api/me');
+  if (me) showApp(me.username);
+  else showLogin();
+})();
+
+setInterval(()=>{
+  if (document.getElementById('app').style.display!=='none'){
+    if (activeTab==='vat') refreshAll();
+    else refreshWater();
+  }
+},30000);
+
+function startSSE(){
+  const es=new EventSource('/api/events');
+  es.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if (d.type==='water'){if (activeTab==='water') refreshWater();}
+    else {if (activeTab==='vat') refreshAll();}
+  };
+  es.onerror=()=>setTimeout(startSSE,5000);
+}
+
+document.getElementById('password').addEventListener('keydown',e=>{
+  if (e.key==='Enter') login();
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Irrigator Map
+// All API calls go to /irrigator-api/* which the Node.js server
+// proxies to the Flask irrigator backend on port 5000.
+// ──────────────────────────────────────────────────────────────────────
+const IRR = '/irrigator-api';
+const SESSION_COLORS = [
+  '#4caf50','#2196f3','#ff9800','#e91e63',
+  '#9c27b0','#00bcd4','#ff5722','#8bc34a'
+];
+let irrReady=false, irrMap=null, irrLiveMarker=null;
+let irrTrackLayer=null, irrSpreadLayer=null, irrAlertLayer=null;
+let irrAllSpreadsLayer=null;
+let irrActiveSession=null;
+let irrLivePoll=null, irrAlertPoll=null;
+let irrSessionColorMap={};
+
+// ── Toast ─────────────────────────────────────────────────────────────
+let irrToastTimer=null;
+function irrShowToast(msg, isError=true){
+  const t=document.getElementById('irr-toast');
+  t.textContent=msg;
+  t.style.background=isError?'#b91c1c':'#166534';
+  t.classList.add('irr-toast-show');
+  clearTimeout(irrToastTimer);
+  irrToastTimer=setTimeout(()=>t.classList.remove('irr-toast-show'),4000);
+}
+
+function irrInit(){
+  if (irrReady){ irrMap && irrMap.invalidateSize(); return; }
+
+  function _setup(){
+    irrReady=true;
+    irrMap=L.map('irr-map',{zoomControl:true}).setView([-43.5,172.6],14);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {attribution:'Tiles © Esri',maxZoom:20}).addTo(irrMap);
+    irrAllSpreadsLayer = L.layerGroup().addTo(irrMap);
+    irrTrackLayer  = L.layerGroup().addTo(irrMap);
+    irrSpreadLayer = L.layerGroup().addTo(irrMap);
+    irrAlertLayer  = L.layerGroup().addTo(irrMap);
+    irrLoadSessions();
+    irrLoadAllSpreads();
+    irrPollLive();
+    irrPollAlerts();
+    irrLivePoll  = setInterval(irrPollLive,  15000);
+    irrAlertPoll = setInterval(irrPollAlerts, 30000);
+    setInterval(irrLoadAllSpreads, 60000);
+    setInterval(()=>{ if(irrActiveSession) irrLoadSessionData(irrActiveSession); }, 60000);
+  }
+
+  if(typeof L!=='undefined'){ _setup(); return; }
+  if(!document.getElementById('lf-css')){
+    const c=document.createElement('link');c.id='lf-css';c.rel='stylesheet';
+    c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(c);
+  }
+  const s=document.createElement('script');
+  s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload=_setup; document.head.appendChild(s);
+}
+
+// ── Live position ────────────────────────────────────────────────────
+async function irrPollLive(){
+  const pos=await irrApi('/live');
+  if(!pos){return;}
+  const pumpOn=pos.pump_on===1;
+  const spd=(pos.speed_cms/100).toFixed(1);
+  document.getElementById('irr-pump').textContent =pumpOn?'ON':'OFF';
+  document.getElementById('irr-pump').style.color =pumpOn?'#22c55e':'#ef4444';
+  document.getElementById('irr-speed').textContent=spd+' m/s';
+  const soh=pos.battery_soh;
+  let battTxt=pos.battery_pct+'%';
+  if(soh&&soh>0){
+    battTxt+=` (health ${soh}%)`;
+  }
+  const battEl=document.getElementById('irr-batt');
+  battEl.textContent=battTxt;
+  // Colour-code on charge level; flag degraded health
+  const lowSoc=pos.battery_pct<=20, lowSoh=(soh&&soh>0&&soh<70);
+  battEl.style.color=(lowSoc||lowSoh)?'#ef4444':(pos.battery_pct<=40?'#f59e0b':'');
+  document.getElementById('irr-time').textContent =
+    pos.timestamp ? new Date(pos.timestamp+'Z').toLocaleTimeString() : '—';
+  const badge=document.getElementById('irr-live-badge');
+  badge.textContent = pumpOn?'Pump ON':'GPS OK';
+  badge.className='irr-badge '+(pumpOn?'irr-badge-green':'irr-badge-amber');
+  if(irrMap){
+    const ll=[pos.lat,pos.lon];
+    if(!irrLiveMarker){
+      irrLiveMarker=L.circleMarker(ll,{radius:9,color:'#1e88e5',fillColor:'#42a5f5',fillOpacity:.9,weight:2})
+        .bindTooltip('Irrigator').addTo(irrMap);
+      irrMap.setView(ll,Math.max(irrMap.getZoom(),16));
+    } else { irrLiveMarker.setLatLng(ll); }
+  }
+}
+
+// ── All sessions spread polygons ─────────────────────────────────────
+async function irrLoadAllSpreads(){
+  const results=await irrApi('/sessions/all-spreads');
+  if(!results||!irrAllSpreadsLayer) return;
+  irrAllSpreadsLayer.clearLayers();
+  irrSessionColorMap={};
+  results.forEach((item,i)=>{
+    const color=SESSION_COLORS[i%SESSION_COLORS.length];
+    const sid=item.session.id;
+    irrSessionColorMap[sid]=color;
+    const isActive=sid===irrActiveSession;
+    L.geoJSON(item.geojson,{
+      filter:f=>f.properties.type==='spread',
+      style:{
+        color:color, fillColor:color,
+        fillOpacity:isActive?0.55:0.25,
+        weight:isActive?2:1, opacity:isActive?1:0.6,
+      },
+    }).bindTooltip(`<b>${item.session.name||'Session '+sid}</b><br>`
+        +`${item.stats.area_ha} ha &middot; ${(item.stats.volume_l/1000).toFixed(1)} m³`)
+    .addTo(irrAllSpreadsLayer);
+  });
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────
+async function irrLoadSessions(){
+  const list=await irrApi('/sessions');
+  if(!list) return;
+  const sel=document.getElementById('irr-session-sel');
+  const today=new Date().toISOString().slice(0,10);
+  sel.innerHTML='<option value="">— all sessions —</option>';
+  let todayId=null;
+  list.forEach(s=>{
+    const o=document.createElement('option');
+    o.value=s.id;
+    const dt=s.start_time?s.start_time.slice(0,10):'';
+    o.text=`${s.name||'Session '+s.id} (${dt}) · ${s.point_count??0} pts`;
+    sel.appendChild(o);
+    if(dt===today && !todayId) todayId=s.id;
+  });
+  // Auto-select today's session
+  if(todayId && !irrActiveSession){
+    sel.value=todayId;
+    irrActiveSession=todayId;
+    document.getElementById('irr-spread-card').classList.remove('irr-hidden');
+    irrLoadSessionData(todayId);
+  }
+}
+document.getElementById('irr-session-sel').addEventListener('change',e=>{
+  const id=parseInt(e.target.value);
+  irrClearLayers();
+  irrActiveSession=id||null;
+  document.getElementById('irr-spread-card').classList.toggle('irr-hidden',!id);
+  irrLoadAllSpreads();
+  if(id) irrLoadSessionData(id);
+});
+
+async function irrLoadSessionData(sid){
+  irrClearLayers();
+  const [posList,spData]=await Promise.all([
+    irrApi(`/sessions/${sid}/positions`),
+    irrApi(`/sessions/${sid}/spread`),
+  ]);
+  if(posList&&posList.length>=2) irrRenderTrack(posList);
+  if(spData&&spData.geojson)     irrRenderSpread(spData.geojson,spData.stats);
+  else                           irrShowStats(null);
+}
+
+function irrClearLayers(){
+  if(irrTrackLayer)  irrTrackLayer.clearLayers();
+  if(irrSpreadLayer) irrSpreadLayer.clearLayers();
+}
+
+// ── Track ────────────────────────────────────────────────────────────
+function irrRenderTrack(pts){
+  const lls=pts.map(p=>[p.lat,p.lon]);
+  const poly=L.polyline(lls,{color:'#fff',weight:2,opacity:.7,dashArray:'6 4'}).addTo(irrTrackLayer);
+  const step=Math.max(1,Math.floor(pts.length/20));
+  for(let i=step;i<pts.length;i+=step){
+    const a=pts[i-step],b=pts[i];
+    const ang=irrBearing([a.lat,a.lon],[b.lat,b.lon]);
+    const mid=[(a.lat+b.lat)/2,(a.lon+b.lon)/2];
+    L.marker(mid,{
+      icon:L.divIcon({html:`<div style="transform:rotate(${ang}deg);color:#fff;font-size:13px;line-height:1">&#9650;</div>`,iconSize:[13,13],className:''}),
+      interactive:false
+    }).addTo(irrTrackLayer);
+  }
+  irrMap.fitBounds(poly.getBounds(),{padding:[40,40]});
+}
+function irrBearing(from,to){
+  const dL=(to[1]-from[1])*Math.PI/180;
+  const la=from[0]*Math.PI/180,lb=to[0]*Math.PI/180;
+  const y=Math.sin(dL)*Math.cos(lb);
+  const x=Math.cos(la)*Math.sin(lb)-Math.sin(la)*Math.cos(lb)*Math.cos(dL);
+  return((Math.atan2(y,x)*180/Math.PI)+360)%360;
+}
+
+// ── Depth colour scale (shallow → deep). The annular spray peaks at the 6 m
+//    inner edge, so colour is mapped by depth VALUE not by ring index.
+const DEPTH_ZONE_COLORS=['#e1f5fe','#b3e5fc','#4fc3f7','#0288d1','#01579b','#002171'];
+function irrDepthColor(depth,maxDepth){
+  if(!maxDepth||depth<=0) return DEPTH_ZONE_COLORS[0];
+  const n=DEPTH_ZONE_COLORS.length;
+  const idx=Math.min(n-1,Math.floor((depth/maxDepth)*n));
+  return DEPTH_ZONE_COLORS[idx];
+}
+
+// ── Spread polygon (selected session — depth gradient) ────────────────
+function irrRenderSpread(gj,stats){
+  const maxDepth=(stats&&stats.max_depth_mm)||1;
+  // Depth zones — draw deepest last so peak band sits on top
+  const zoneFeatures=gj.features.filter(f=>f.properties.type==='depth_zone')
+    .sort((a,b)=>a.properties.depth_mm-b.properties.depth_mm);
+  L.geoJSON({type:'FeatureCollection',features:zoneFeatures},{
+    style:f=>({
+      color:'none',
+      fillColor:irrDepthColor(f.properties.depth_mm,maxDepth),
+      fillOpacity:0.75,weight:0,
+    }),
+  }).bindTooltip(f=>`~${f.properties.depth_mm} mm depth`)
+  .addTo(irrSpreadLayer);
+
+  // Outer boundary outline
+  L.geoJSON(gj,{
+    filter:f=>f.properties.type==='spread',
+    style:{color:'#fff',fillOpacity:0,weight:1,opacity:0.5,dashArray:'4 3'},
+  }).addTo(irrSpreadLayer);
+
+  irrUpdateDepthLegend(stats);
+  irrShowStats(stats);
+}
+function irrShowStats(s){
+  if(!s){['area','vol','rate','depth','dur'].forEach(k=>document.getElementById('irr-'+k).textContent='—');return;}
+  document.getElementById('irr-area').textContent =`${s.area_ha} ha`;
+  document.getElementById('irr-vol').textContent  =`${(s.volume_l/1000).toFixed(1)} m³`;
+  document.getElementById('irr-rate').textContent =`${s.app_rate_l_m2} L/m²`;
+  document.getElementById('irr-depth').textContent=`${s.depth_mm} mm avg / ${s.max_depth_mm||'—'} mm max`;
+  document.getElementById('irr-dur').textContent  =`${s.duration_min} min`;
+}
+function irrUpdateDepthLegend(s){
+  const el=document.getElementById('irr-depth-legend');
+  if(!el||!s) return;
+  const max=s.max_depth_mm||s.depth_mm||1;
+  const steps=DEPTH_ZONE_COLORS.length;
+  let html='<div style="font-size:0.7rem;color:var(--muted);margin-bottom:3px">Depth (mm)</div>';
+  html+='<div style="display:flex;gap:2px;align-items:center">';
+  for(let i=0;i<steps;i++){
+    const d=((max/steps)*(i+0.5)).toFixed(1);
+    html+=`<div style="background:${DEPTH_ZONE_COLORS[i]};width:18px;height:12px;border-radius:2px" title="${d} mm"></div>`;
+  }
+  html+=`</div><div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted)"><span>0</span><span>${max} mm</span></div>`;
+  el.innerHTML=html;
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────
+async function irrPollAlerts(){
+  const alerts=await irrApi('/alerts');
+  if(!alerts) return;
+  const list=document.getElementById('irr-alerts-list');
+  const cnt =document.getElementById('irr-alert-count');
+  if(irrAlertLayer) irrAlertLayer.clearLayers();
+  if(!alerts.length){
+    list.innerHTML='<span style="color:var(--muted);font-size:0.78rem">No active alerts</span>';
+    cnt.classList.add('irr-hidden'); return;
+  }
+  cnt.textContent=alerts.length; cnt.classList.remove('irr-hidden');
+  list.innerHTML='';
+  alerts.forEach(a=>{
+    const isKick = (a.alert_type==='KICKOUT');
+    const when   = (a.timestamp||'').slice(0,16).replace('T',' ');
+    if(a.lat&&a.lon&&irrAlertLayer){
+      if(isKick){
+        // Distinct kickout marker: black-ringed red octagon ("pump stopped")
+        L.marker([a.lat,a.lon],{icon:L.divIcon({
+          className:'',
+          html:'<div style="font-size:20px;line-height:20px;filter:drop-shadow(0 0 2px #000)">&#128721;</div>',
+          iconSize:[20,20],iconAnchor:[10,10]})})
+          .bindPopup(`<b>PUMP KICKED OUT</b><br>Auto cutoff — restart manually<br>${when}`)
+          .addTo(irrAlertLayer);
+      } else {
+        L.circleMarker([a.lat,a.lon],{radius:10,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.7,weight:2})
+          .bindPopup(`<b>STALL ALERT</b><br>${when}`)
+          .addTo(irrAlertLayer);
+      }
+    }
+    const loc=(a.lat&&a.lon)?`${a.lat.toFixed(5)}, ${a.lon.toFixed(5)}`:'Location unknown';
+    const div=document.createElement('div'); div.className='irr-alert-item';
+    const title = isKick
+      ? '<div class="irr-alert-loc" style="color:#b91c1c">&#128721; PUMP KICKED OUT (auto cutoff)</div>'
+      : '<div class="irr-alert-loc">&#9888; IRRIGATOR STALLED</div>';
+    div.innerHTML=`${title}
+      <div class="irr-alert-time">${when} UTC</div>
+      <div style="font-size:0.7rem;color:var(--muted)">${loc}</div>
+      <button class="irr-btn irr-btn-gray" style="margin-top:4px;font-size:0.72rem;padding:2px 8px" onclick="irrAck(${a.id})">Acknowledge</button>`;
+    list.appendChild(div);
+  });
+}
+async function irrAck(id){ await irrApi(`/alerts/${id}/ack`,{method:'PUT'}); irrPollAlerts(); }
+
+// ── API helper ────────────────────────────────────────────────────────
+async function irrApi(path,opts={}){
+  try{
+    const r=await fetch(IRR+path,{credentials:'include',...opts});
+    if(r.status===502){
+      irrShowToast('Irrigator server unavailable — start app.py on the Pi');
+      return null;
+    }
+    if(!r.ok) return null;
+    return r.json();
+  }catch(e){
+    irrShowToast('Could not reach irrigator server');
+    return null;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Feed Mixer
+// ──────────────────────────────────────────────────────────────────────
+const FM = '/feedmixer-api';
+
+// State
+let fmIngredients = [];   // full ingredient list (for ration dropdowns)
+let fmEditIngId   = null; // ingredient being edited (null = new)
+let fmEditHerdId  = null; // herd being edited (null = new)
+
+// ── Init ──────────────────────────────────────────────────────────────
+async function fmInit(){
+  await fmLoadSettings();
+  await Promise.all([fmLoadIngredients(), fmLoadHerds(), fmLoadLog()]);
+}
+
+// ── Settings ─────────────────────────────────────────────────────────
+async function fmLoadSettings(){
+  const s = await api('/irrigator-api/settings');
+  if (!s) return;
+  if (s.fm_device_eui)  document.getElementById('fm-dev-eui').value   = s.fm_device_eui;
+  if (s.fm_cs_api_key)  document.getElementById('fm-cs-api-key').value = s.fm_cs_api_key;
+}
+
+async function fmSaveSettings(){
+  const body = {
+    fm_device_eui: document.getElementById('fm-dev-eui').value.trim(),
+    fm_cs_api_key: document.getElementById('fm-cs-api-key').value.trim(),
+  };
+  const r = await api('/irrigator-api/settings', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  const msg = document.getElementById('fm-settings-msg');
+  if (r !== null){ msg.style.display='inline'; setTimeout(()=>msg.style.display='none',2500); }
+}
+
+function fmToggleSettings(btn){
+  const body  = document.getElementById('fm-settings-body');
+  const arrow = document.getElementById('fm-settings-arrow');
+  const open  = body.classList.toggle('open');
+  arrow.innerHTML = open ? '&#9660;' : '&#9654;';
+}
+
+// ── Toast (reuse irrigator toast) ────────────────────────────────────
+function fmToast(msg, ok=true){ irrShowToast(msg, !ok); }
+
+// ── Ingredients ──────────────────────────────────────────────────────
+async function fmLoadIngredients(){
+  const data = await api(FM+'/ingredients');
+  fmIngredients = data || [];
+  const el = document.getElementById('fm-ing-list');
+  if (!fmIngredients.length){
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No ingredients yet.</p>';
+    return;
+  }
+  el.innerHTML = fmIngredients.map(ing => `
+    <div class="fm-card" id="fm-ing-row-${ing.id}">
+      <span style="flex:1;font-weight:600;font-size:0.88rem">${_esc(ing.name)}</span>
+      <span class="fm-badge">${ing.dm_pct ?? '—'} % DM</span>
+      <span class="fm-badge ${ing.active ? 'fm-badge-green' : ''}">${ing.active ? 'Active' : 'Inactive'}</span>
+      <button class="btn-sm" style="background:var(--border);color:var(--text)"
+              onclick="fmStartEditIngredient(${ing.id})">Edit</button>
+      <button class="btn-sm btn-danger"
+              onclick="fmDeleteIngredient(${ing.id})">Del</button>
+    </div>
+  `).join('');
+}
+
+function fmToggleIngForm(clear=true){
+  const form = document.getElementById('fm-ing-form');
+  const open = form.classList.toggle('open');
+  if (!open || clear){
+    fmEditIngId = null;
+    document.getElementById('fm-ing-name').value = '';
+    document.getElementById('fm-ing-dm').value   = '';
+    document.getElementById('fm-ing-active').checked = true;
+  }
+}
+
+function fmStartEditIngredient(id){
+  const ing = fmIngredients.find(i=>i.id===id);
+  if (!ing) return;
+  fmEditIngId = id;
+  document.getElementById('fm-ing-name').value   = ing.name;
+  document.getElementById('fm-ing-dm').value     = ing.dm_pct ?? '';
+  document.getElementById('fm-ing-active').checked = !!ing.active;
+  const form = document.getElementById('fm-ing-form');
+  form.classList.add('open');
+  form.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function fmSaveIngredient(){
+  const name   = document.getElementById('fm-ing-name').value.trim();
+  const dm_pct = parseFloat(document.getElementById('fm-ing-dm').value);
+  const active = document.getElementById('fm-ing-active').checked ? 1 : 0;
+  if (!name){ alert('Ingredient name is required.'); return; }
+  const body = JSON.stringify({name, dm_pct: isNaN(dm_pct)?null:dm_pct, active});
+  const hdrs = {'Content-Type':'application/json'};
+  let r;
+  if (fmEditIngId){
+    r = await api(`${FM}/ingredients/${fmEditIngId}`, {method:'PUT', headers:hdrs, body});
+  } else {
+    r = await api(`${FM}/ingredients`,                {method:'POST',headers:hdrs, body});
+  }
+  if (r !== null){ fmToggleIngForm(true); await fmLoadIngredients(); }
+}
+
+async function fmDeleteIngredient(id){
+  if (!confirm('Delete this ingredient?')) return;
+  await api(`${FM}/ingredients/${id}`, {method:'DELETE'});
+  await fmLoadIngredients();
+}
+
+// ── Herds & Rations ──────────────────────────────────────────────────
+async function fmLoadHerds(){
+  const herds = await api(FM+'/herds');
+  const el = document.getElementById('fm-herd-list');
+  if (!herds || !herds.length){
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No herds yet.</p>';
+    return;
+  }
+  el.innerHTML = herds.map(h => _fmHerdCard(h)).join('');
+}
+
+function _fmHerdCard(h){
+  const entries = (h.entries || []);
+  const rationRows = entries.map((r,i)=>`
+    <div class="fm-ration-row" id="fm-rrow-${h.id}-${i}">
+      <select class="fm-input fm-ration-ing" style="flex:1;min-width:110px">
+        ${fmIngredients.map(ing=>`<option value="${ing.id}" ${ing.id===r.ingredient_id?'selected':''}>${_esc(ing.name)}</option>`).join('')}
+      </select>
+      <input type="number" class="fm-input fm-ration-kg" value="${r.kg_dm_per_cow??''}" placeholder="kg DM" min="0" step="0.1" style="width:80px">
+      <span style="font-size:0.78rem;color:var(--muted)">kg DM/cow</span>
+      <button class="btn-sm btn-danger" onclick="this.closest('.fm-ration-row').remove()">×</button>
+    </div>
+  `).join('');
+
+  const cows = h.num_cows || 0;
+  let mixHtml = '', totalWet = 0;
+  if (entries.length && cows > 0){
+    entries.forEach(r=>{
+      const dm = r.dm_pct || 1;
+      const wet = (r.kg_dm_per_cow * cows) / (dm / 100);
+      totalWet += wet;
+      mixHtml += `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:0.85rem">
+        <span>${_esc(r.ingredient_name||'Feed')}</span>
+        <span><b>${wet.toFixed(0)} kg</b> wet</span></div>`;
+    });
+    mixHtml += `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;
+      font-weight:700;display:flex;justify-content:space-between;font-size:0.88rem">
+      <span>Total load</span><span>${totalWet.toFixed(0)} kg</span></div>`;
+  }
+
+  return `
+    <div class="fm-herd-card" id="fm-herd-card-${h.id}">
+      <div class="fm-herd-header" onclick="fmToggleHerd(${h.id})">
+        <span style="font-weight:700;flex:1">${_esc(h.name)}</span>
+        <span class="fm-badge fm-badge-green">${h.num_cows??'—'} cows</span>
+        <span class="fm-badge fm-badge-orange">${h.meals_per_day??'—'} meals/day</span>
+        <button class="btn-sm" style="background:var(--border);color:var(--text);z-index:1"
+                onclick="event.stopPropagation();fmStartEditHerd(${h.id})">Edit</button>
+        <button class="btn-sm btn-danger" style="z-index:1"
+                onclick="event.stopPropagation();fmDeleteHerd(${h.id})">Del</button>
+        <button class="btn-sm btn-warning" style="z-index:1"
+                onclick="event.stopPropagation();fmPushDevice([${h.id}])">&#x2191; Push</button>
+      </div>
+      <div class="fm-herd-body" id="fm-herd-body-${h.id}">
+        ${mixHtml ? `<div style="background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);
+            border-radius:8px;padding:10px;margin-bottom:10px">
+          <div style="font-size:0.75rem;color:var(--accent);text-transform:uppercase;
+              letter-spacing:0.05em;margin-bottom:6px">Mix — ${cows} cows</div>
+          ${mixHtml}</div>` : ''}
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">
+          Ration (kg DM per cow per meal)</div>
+        <div id="fm-ration-rows-${h.id}">
+          ${rationRows||'<p style="color:var(--muted);font-size:0.82rem">No ration entries. Add ingredients below.</p>'}
+        </div>
+        <div class="fm-row" style="margin-top:0.5rem">
+          <button class="btn-sm" style="background:var(--border);color:var(--text)"
+                  onclick="fmAddRationRow(${h.id})">+ Add ingredient</button>
+          <button class="btn-sm btn-success" onclick="fmSaveRation(${h.id})">Save ration</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function fmToggleHerd(id){
+  document.getElementById('fm-herd-body-'+id).classList.toggle('open');
+}
+
+function fmToggleHerdForm(clear=true){
+  const form = document.getElementById('fm-herd-form');
+  const open = form.classList.toggle('open');
+  if (!open || clear){
+    fmEditHerdId = null;
+    document.getElementById('fm-herd-name').value  = '';
+    document.getElementById('fm-herd-cows').value  = '';
+    document.getElementById('fm-herd-meals').value = '';
+  }
+}
+
+function fmStartEditHerd(id){
+  // Fetch the herd from the rendered card (re-query DOM for current values)
+  const card = document.getElementById('fm-herd-card-'+id);
+  if (!card) return;
+  fmEditHerdId = id;
+  // Extract values from badges
+  const badges = card.querySelectorAll('.fm-badge');
+  const name = card.querySelector('.fm-herd-header span').textContent.trim();
+  document.getElementById('fm-herd-name').value  = name;
+  const form = document.getElementById('fm-herd-form');
+  form.classList.add('open');
+  form.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function fmSaveHerd(){
+  const name         = document.getElementById('fm-herd-name').value.trim();
+  const num_cows     = parseInt(document.getElementById('fm-herd-cows').value,10)||null;
+  const meals_per_day= parseInt(document.getElementById('fm-herd-meals').value,10)||null;
+  if (!name){ alert('Herd name is required.'); return; }
+  const body = JSON.stringify({name, num_cows, meals_per_day});
+  const hdrs = {'Content-Type':'application/json'};
+  let r;
+  if (fmEditHerdId){
+    r = await api(`${FM}/herds/${fmEditHerdId}`, {method:'PUT', headers:hdrs, body});
+  } else {
+    r = await api(`${FM}/herds`,                 {method:'POST',headers:hdrs, body});
+  }
+  if (r !== null){ fmToggleHerdForm(true); await fmLoadHerds(); }
+}
+
+async function fmDeleteHerd(id){
+  if (!confirm('Delete this herd and its ration?')) return;
+  await api(`${FM}/herds/${id}`, {method:'DELETE'});
+  await fmLoadHerds();
+}
+
+function fmAddRationRow(herdId){
+  const container = document.getElementById('fm-ration-rows-'+herdId);
+  // Remove "no ration entries" placeholder if present
+  const placeholder = container.querySelector('p');
+  if (placeholder) placeholder.remove();
+  const idx = container.querySelectorAll('.fm-ration-row').length;
+  const ingOptions = fmIngredients.map(ing=>`<option value="${ing.id}">${_esc(ing.name)}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'fm-ration-row';
+  row.id = `fm-rrow-${herdId}-new-${idx}`;
+  row.innerHTML = `
+    <select class="fm-input fm-ration-ing" style="flex:1;min-width:110px">${ingOptions}</select>
+    <input type="number" class="fm-input fm-ration-kg" value="" placeholder="kg DM" min="0" step="0.1" style="width:80px">
+    <span style="font-size:0.78rem;color:var(--muted)">kg DM/cow</span>
+    <button class="btn-sm btn-danger" onclick="this.closest('.fm-ration-row').remove()">×</button>
+  `;
+  container.appendChild(row);
+}
+
+async function fmSaveRation(herdId){
+  const container = document.getElementById('fm-ration-rows-'+herdId);
+  const rows      = container.querySelectorAll('.fm-ration-row');
+  const entries   = [];
+  rows.forEach(row=>{
+    const ing_id = parseInt(row.querySelector('.fm-ration-ing').value, 10);
+    const kg     = parseFloat(row.querySelector('.fm-ration-kg').value);
+    if (ing_id && !isNaN(kg)) entries.push({ingredient_id:ing_id, kg_dm_per_cow:kg});
+  });
+  const r = await api(`${FM}/herds/${herdId}/ration`, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(entries),
+  });
+  if (r !== null) fmToast('Ration saved.', true);
+  else            fmToast('Failed to save ration.', false);
+}
+
+// ── Push to device ────────────────────────────────────────────────────
+async function fmPushDevice(herdIds){
+  const body = herdIds ? {herd_ids: herdIds} : {};
+  const r = await api('/api/feedmixer/push-device', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (r !== null) fmToast('Pushed to device successfully.', true);
+  else            fmToast('Push to device failed.', false);
+}
+
+// ── Feed Log ─────────────────────────────────────────────────────────
+async function fmLoadLog(){
+  const log  = await api(FM+'/log');
+  const tbody= document.getElementById('fm-log-tbody');
+  if (!log || !log.length){
+    tbody.innerHTML='<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">No feed sessions yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = log.map(row => {
+    const stepsHtml = (row.steps && row.steps.length)
+      ? row.steps.map(s=>`<div style="font-size:0.75rem;color:var(--muted)">${_esc(String(s.step_index??''))}: ${_esc(String(s.ingredient_name??''))} — ${s.actual_kg??'—'} kg</div>`).join('')
+      : '<span style="color:var(--muted);font-size:0.75rem">—</span>';
+    return `<tr>
+      <td>${_esc(String(row.created_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${_esc(row.herd_name||'—')}</td>
+      <td>${row.total_kg != null ? row.total_kg : '—'}</td>
+      <td>${stepsHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Utility ───────────────────────────────────────────────────────────
+function _esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ── Ingredient Modal ──────────────────────────────────────────────────
+function fmOpenIngModal(){
+  document.getElementById('fm-ing-modal').classList.add('open');
+  fmLoadIngredients();
+}
+function fmCloseIngModal(){ document.getElementById('fm-ing-modal').classList.remove('open'); }
+
+// ── Toggle ingredient active status ──────────────────────────────────
+async function fmToggleIngActive(id, cur){
+  await api(`${FM}/ingredients/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:cur?0:1})});
+  fmLoadIngredients();
+}
+
+// ── Update fmLoadIngredients to make Active badge clickable ──────────
+// (override the previously defined function)
+async function fmLoadIngredients(){
+  const data = await api(FM+'/ingredients');
+  fmIngredients = data || [];
+  const el = document.getElementById('fm-ing-list');
+  if (!fmIngredients.length){
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No ingredients yet.</p>';
+    return;
+  }
+  el.innerHTML = fmIngredients.map(ing => `
+    <div class="fm-card" id="fm-ing-row-${ing.id}">
+      <span style="flex:1;font-weight:600;font-size:0.88rem">${_esc(ing.name)}</span>
+      <span class="fm-badge">${ing.dm_pct ?? '—'} % DM</span>
+      <button class="fm-badge ${ing.active ? 'fm-badge-green' : ''}"
+              style="border:none;cursor:pointer"
+              onclick="fmToggleIngActive(${ing.id},${ing.active})"
+              title="Click to toggle active">${ing.active ? 'Active' : 'Inactive'}</button>
+      <button class="btn-sm" style="background:var(--border);color:var(--text)"
+              onclick="fmStartEditIngredient(${ing.id})">Edit</button>
+      <button class="btn-sm btn-danger"
+              onclick="fmDeleteIngredient(${ing.id})">Del</button>
+    </div>
+  `).join('');
+}
+
+// ── Device Settings ──────────────────────────────────────────────────
+let _devAuthedAt = 0;
+function isDevAuthed(){ return Date.now() - _devAuthedAt < 10 * 60 * 1000; }
+let devEditId = null;
+
+async function devVerifyPwd(){
+  const pwd = document.getElementById('dev-pwd-input').value;
+  const r = await api('/api/verify-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+  if (!r || r.error){
+    document.getElementById('dev-pwd-err').style.display='inline';
+    return;
+  }
+  _devAuthedAt = Date.now();
+  document.getElementById('dev-pwd-input').value = '';
+  document.getElementById('dev-pwd-err').style.display = 'none';
+  document.getElementById('dev-pwd-overlay').style.display = 'none';
+  document.getElementById('dev-content').style.display = 'block';
+  devInit();
+}
+
+async function devInit(){
+  const rows = await api('/api/devices');
+  const tbody = document.getElementById('dev-tbody');
+  if (!rows || !rows.length){
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">No devices registered yet.</td></tr>';
+    return;
+  }
+  const TYPE_LABELS = {water:'Water Meter',vat:'VAT Tap',irrigator:'Irrigator',feedmixer:'Feed Mixer',other:'Other'};
+  tbody.innerHTML = rows.map(d=>`
+    <tr>
+      <td style="font-weight:600">${_esc(d.name)}</td>
+      <td><span class="dev-type-badge dev-type-${d.type}">${TYPE_LABELS[d.type]||d.type}</span></td>
+      <td style="font-family:monospace;font-size:0.78rem">${_esc(d.dev_eui)}</td>
+      <td style="font-family:monospace;font-size:0.78rem">${_esc(d.app_eui||'—')}</td>
+      <td style="font-family:monospace;font-size:0.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis"
+          title="${_esc(d.app_key||'')}">${d.app_key ? d.app_key.slice(0,8)+'…' : '—'}</td>
+      <td style="color:var(--muted);font-size:0.8rem">${_esc(d.notes||'')}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-sm" style="background:var(--border);color:var(--text)"
+                onclick="devStartEdit(${d.id})">Edit</button>
+        <button class="btn-sm btn-danger" onclick="devDelete(${d.id})">Del</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function devToggleForm(clear=true){
+  const form = document.getElementById('dev-form');
+  const open = form.classList.toggle('open');
+  if (!open || clear){ devEditId=null; ['dev-name','dev-eui','dev-app-eui','dev-app-key','dev-notes'].forEach(id=>document.getElementById(id).value=''); document.getElementById('dev-type').value='water'; }
+}
+
+function devStartEdit(id){
+  api('/api/devices').then(rows=>{
+    const d = rows && rows.find(r=>r.id===id);
+    if (!d) return;
+    devEditId = id;
+    document.getElementById('dev-name').value    = d.name;
+    document.getElementById('dev-eui').value     = d.dev_eui;
+    document.getElementById('dev-type').value    = d.type;
+    document.getElementById('dev-app-eui').value = d.app_eui||'';
+    document.getElementById('dev-app-key').value = d.app_key||'';
+    document.getElementById('dev-notes').value   = d.notes||'';
+    const form = document.getElementById('dev-form');
+    form.classList.add('open');
+    form.scrollIntoView({behavior:'smooth',block:'nearest'});
+  });
+}
+
+async function devSave(){
+  const body = {
+    name:    document.getElementById('dev-name').value.trim(),
+    dev_eui: document.getElementById('dev-eui').value.trim(),
+    type:    document.getElementById('dev-type').value,
+    app_eui: document.getElementById('dev-app-eui').value.trim(),
+    app_key: document.getElementById('dev-app-key').value.trim(),
+    notes:   document.getElementById('dev-notes').value.trim(),
+  };
+  if (!body.name || !body.dev_eui){ alert('Name and DevEUI are required'); return; }
+  const r = devEditId
+    ? await api(`/api/devices/${devEditId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    : await api('/api/devices',             {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (r && !r.error){ devToggleForm(true); devInit(); }
+  else alert((r&&r.error)||'Save failed');
+}
+
+async function devDelete(id){
+  if (!confirm('Delete this device?')) return;
+  await api(`/api/devices/${id}`,{method:'DELETE'});
+  devInit();
+}
+</script>
+</body>
+</html>
