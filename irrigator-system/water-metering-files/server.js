@@ -631,41 +631,83 @@ function getFlaskFM(path) {
   });
 }
 
+// Protobuf varint encoder
+function _pbVarint(n) {
+  const b = [];
+  while (n > 127) { b.push((n & 0x7f) | 0x80); n >>>= 7; }
+  b.push(n & 0x7f);
+  return Buffer.from(b);
+}
+
+// Encode EnqueueDeviceQueueItemRequest (binary protobuf)
+// DeviceQueueItem: dev_eui(1 string), confirmed(2 bool), f_port(3 uint32), data(4 bytes)
+// EnqueueDeviceQueueItemRequest: queue_item(1 message)
+function _encodeEnqueue(devEui, fPort, data) {
+  const euiBuf = Buffer.from(devEui, 'ascii');
+  const inner  = Buffer.concat([
+    Buffer.from([0x0a]), _pbVarint(euiBuf.length), euiBuf,  // field 1 dev_eui
+    Buffer.from([0x18]), _pbVarint(fPort),                   // field 3 f_port
+    Buffer.from([0x22]), _pbVarint(data.length), data,       // field 4 data
+  ]);
+  return Buffer.concat([
+    Buffer.from([0x0a]), _pbVarint(inner.length), inner,     // field 1 queue_item
+  ]);
+}
+
 function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
   return new Promise((resolve, reject) => {
-    const eui  = devEui.toLowerCase().replace(/[:\-]/g, '');
-    const body = JSON.stringify({
-      queueItem: { confirmed: false, fPort, data: payloadBuf.toString('base64') },
-    });
+    const eui   = devEui.toLowerCase().replace(/[:\-]/g, '');
+    const proto = _encodeEnqueue(eui, fPort, payloadBuf);
+    // gRPC-web data frame: 0x00 flag + uint32BE(length) + proto bytes
+    const frame = Buffer.alloc(5 + proto.length);
+    frame[0] = 0x00;
+    frame.writeUInt32BE(proto.length, 1);
+    proto.copy(frame, 5);
+
     const req = require('http').request({
-      hostname: CS_HOST,
-      port:     CS_PORT,
-      path:     `/api/devices/${eui}/queue`,
+      hostname: CS_HOST, port: CS_PORT,
+      path:     '/api.DeviceService/Enqueue',
       method:   'POST',
       headers: {
-        'Content-Type':   'application/json',
-        'Accept':         'application/json',
+        'Content-Type':   'application/grpc-web',
+        'X-Grpc-Web':     '1',
         'Authorization':  `Bearer ${apiKey}`,
-        'Content-Length': Buffer.byteLength(body),
+        'Content-Length': frame.length,
       },
     }, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
-        const raw = Buffer.concat(chunks).toString('utf8');
-        console.log(`[CS downlink] eui=${eui} fPort=${fPort} HTTP ${res.statusCode} ${raw.slice(0, 200)}`);
+        const buf = Buffer.concat(chunks);
+        // Parse gRPC-web trailer frame (flag byte 0x80)
+        let trailerText = '';
+        let i = 0;
+        while (i + 5 <= buf.length) {
+          const flag = buf[i];
+          const len  = buf.readUInt32BE(i + 1);
+          if (flag === 0x80) trailerText = buf.slice(i + 5, i + 5 + len).toString('utf8');
+          i += 5 + len;
+        }
+        console.log(`[CS downlink] eui=${eui} fPort=${fPort} HTTP ${res.statusCode} trailer="${trailerText.trim()}"`);
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ status: res.statusCode, body: raw });
+          const statusMatch = trailerText.match(/grpc-status:\s*(\d+)/);
+          const grpcStatus  = statusMatch ? parseInt(statusMatch[1]) : 0;
+          if (grpcStatus === 0) {
+            resolve({ status: 200, body: 'queued' });
+          } else {
+            const msgMatch = trailerText.match(/grpc-message:\s*([^\r\n]*)/);
+            reject(new Error(`gRPC ${grpcStatus}: ${msgMatch ? decodeURIComponent(msgMatch[1]) : trailerText.slice(0, 200)}`));
+          }
         } else {
-          reject(new Error(`ChirpStack HTTP ${res.statusCode}: ${raw.slice(0, 300)}`));
+          reject(new Error(`ChirpStack HTTP ${res.statusCode}: ${buf.slice(0, 200).toString('utf8')}`));
         }
       });
     });
     req.on('error', err => {
-      console.error(`[CS downlink] connection error: ${err.message}`);
+      console.error(`[CS downlink] error: ${err.message}`);
       reject(err);
     });
-    req.write(body);
+    req.write(frame);
     req.end();
   });
 }
