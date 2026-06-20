@@ -631,14 +631,48 @@ function getFlaskFM(path) {
   });
 }
 
-function sendChirpStackDownlink(devEui, _apiKey, fPort, payloadBuf) {
-  const topic = `application/${CHIRPSTACK_APP}/device/${devEui}/command/down`;
-  const msg   = JSON.stringify({ devEui, confirmed: false, fPort, data: payloadBuf.toString('base64') });
+function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
   return new Promise((resolve, reject) => {
-    mqttClient.publish(topic, msg, { qos: 0 }, err => {
-      if (err) reject(err);
-      else resolve({ status: 200, body: 'published via MQTT' });
+    const jsonBytes = Buffer.from(JSON.stringify({
+      queueItem: { devEui, confirmed: false, fPort, data: payloadBuf.toString('base64') },
+    }), 'utf8');
+    // gRPC-web frame: flag byte 0x00 (data frame) + 4-byte big-endian payload length
+    const body = Buffer.alloc(5 + jsonBytes.length);
+    body[0] = 0x00;
+    body.writeUInt32BE(jsonBytes.length, 1);
+    jsonBytes.copy(body, 5);
+
+    const req = require('http').request({
+      hostname: CS_HOST,
+      port:     CS_PORT,
+      path:     '/api.DeviceService/Enqueue',
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/grpc-web+json',
+        'X-Grpc-Web':     '1',
+        'Authorization':  `Bearer ${apiKey}`,
+        'Content-Length': body.length,
+      },
+    }, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          // Check for gRPC trailer error (grpc-status != 0) in response body
+          if (raw.includes('grpc-status') && !raw.includes('grpc-status: 0') && !raw.includes('grpc-status:0')) {
+            reject(new Error(`ChirpStack gRPC error: ${raw.slice(0, 200)}`));
+          } else {
+            resolve({ status: res.statusCode, body: 'queued via gRPC-web' });
+          }
+        } else {
+          reject(new Error(`ChirpStack HTTP ${res.statusCode}: ${raw.slice(0, 200)}`));
+        }
+      });
     });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
   });
 }
 
