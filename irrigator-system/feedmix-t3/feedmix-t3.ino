@@ -460,6 +460,7 @@ void apiComplete() {
 static const char PAGE[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>FeedMix</title>
 <style>
@@ -502,12 +503,20 @@ select{width:100%;padding:9px 8px;background:#101810;color:#dde8dd;border:1px so
 .no-data{text-align:center;color:#2a3a2a;padding:40px 20px;font-size:.9rem}
 #fo{display:none;padding:0 16px}
 .fo-title{text-align:center;padding:22px 0 6px;color:#6ecb6e;font-size:1.1rem;font-weight:700}
-.fo-sub{text-align:center;color:#6a8a6a;font-size:.85rem;margin-bottom:16px}
-.fo-scale{text-align:center;font-size:1.4rem;font-weight:700;color:#aff5ae;margin-bottom:14px}
-.fo-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #131f13;font-size:.9rem}
+.fo-sub{text-align:center;color:#6a8a6a;font-size:.85rem;margin-bottom:10px}
+.fo-scale{text-align:center;font-size:1.3rem;font-weight:700;color:#aff5ae;margin-bottom:14px}
+.fo-scale.off{color:#2a3a2a}
+.lane-sec{margin:0 -16px 14px}
+.lane-lbl{font-size:.65rem;color:#4a664a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;padding:0 16px}
+.lane-btns{display:flex;gap:8px;padding:0 16px}
+.lane-btn{flex:1;padding:11px 0;background:#101810;color:#4a664a;border:1px solid #253525;border-radius:8px;font-size:1.1rem;font-weight:700;cursor:pointer;touch-action:manipulation}
+.lane-btn.active{background:#1a4a1a;color:#aff5ae;border-color:#3a7a3a}
+.fo-row{display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid #131f13;font-size:.9rem}
 .fo-name{color:#8ab88a}
-.fo-kg{color:#6ecb6e;font-weight:700}
+.fo-kg{display:flex;flex-direction:column;align-items:flex-end;color:#6ecb6e;font-weight:700}
+.fo-lane{color:#4a664a;font-size:.72rem;font-weight:400}
 .fo-total{display:flex;justify-content:space-between;padding:12px 0 0;font-size:1.05rem;font-weight:700;color:#aff5ae;border-top:2px solid #2a5a2a;margin-top:4px}
+.fo-total.sub{font-size:.9rem;font-weight:400;color:#6ecb6e;border-top:none;padding-top:5px;opacity:.75}
 footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f09;border-top:1px solid #1a2a1a;display:flex;gap:8px}
 .btn-fo{flex:1;padding:13px;background:#1a4a1a;color:#aff5ae;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;touch-action:manipulation}
 .btn-fo:disabled{background:#101810;color:#2a3a2a}
@@ -549,9 +558,19 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
 <div id="fo">
   <div class="fo-title">&#128668; FEEDOUT MODE</div>
   <div class="fo-sub" id="fo-sub"></div>
-  <div class="fo-scale" id="fo-scale"></div>
+  <div class="fo-scale off" id="fo-scale">&#9878; -- kg</div>
+  <div class="lane-sec">
+    <div class="lane-lbl">Feed lanes</div>
+    <div class="lane-btns">
+      <button class="lane-btn active" onclick="setLanes(1)">1</button>
+      <button class="lane-btn" onclick="setLanes(2)">2</button>
+      <button class="lane-btn" onclick="setLanes(3)">3</button>
+      <button class="lane-btn" onclick="setLanes(4)">4</button>
+    </div>
+  </div>
   <div id="fo-rows"></div>
-  <div class="fo-total"><span>Total loaded</span><span id="fo-total"></span></div>
+  <div class="fo-total"><span>Total loaded</span><span id="fo-total">-- kg</span></div>
+  <div class="fo-total sub" id="fo-lane-row" style="display:none"><span>Per lane</span><span id="fo-per-lane"></span></div>
   <footer>
     <button class="btn-back" onclick="goLoad()">&#8592; Loading</button>
     <button class="btn-log" onclick="finish()">&#10003; Log to Pi</button>
@@ -560,8 +579,9 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
 
 <div id="toast"></div>
 <script>
-var st={},inFeedout=false;
+var st={},inFeedout=false,lanes=1;
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.style.opacity=1;setTimeout(function(){e.style.opacity=0},2600)}
+function setLanes(n){lanes=n;render(st)}
 function setHerd(i){fetch('/api/herd?idx='+i).then(poll)}
 function setCows(n){if(+n>0)fetch('/api/cows?n='+n).then(poll)}
 function adjCows(d){var el=document.getElementById('cow-n');var v=Math.max(1,(+el.value||0)+d);el.value=v;setCows(v)}
@@ -620,20 +640,28 @@ function render(s){
   ents.forEach(function(e){totT+=e.wet_kg;totL+=e.loaded_kg||0;if(!e.done)allDone=false;});
   var ovPct=totT>0?Math.min(100,Math.round(totL/totT*100)):0;
 
-  if(inFeedout&&allDone){
+  if(inFeedout){
     document.getElementById('load').style.display='none';
     document.getElementById('fo').style.display='';
     document.getElementById('fo-sub').textContent=s.herd.name+' • '+s.herd.num_cows+' cows • '+s.herd.meals_per_day+'x/day';
     var fs=document.getElementById('fo-scale');
-    if(s.scaleValid)fs.textContent='⚖ '+s.scaleKg.toFixed(1)+' kg on wagon';
-    else fs.textContent='';
+    if(s.scaleValid){fs.textContent='⚖ '+s.scaleKg.toFixed(1)+' kg on wagon';fs.className='fo-scale';}
+    else{fs.textContent='⚖ -- kg';fs.className='fo-scale off';}
+    document.querySelectorAll('.lane-btn').forEach(function(b,i){b.className='lane-btn'+(i+1===lanes?' active':'');});
+    var totLoaded=0;
+    ents.forEach(function(e){totLoaded+=(e.loaded_kg||0);});
     document.getElementById('fo-rows').innerHTML=ents.map(function(e){
-      return'<div class="fo-row"><span class="fo-name">'+e.name+'</span><span class="fo-kg">'+e.loaded_kg.toFixed(1)+' kg ✓</span></div>';
+      var chk=e.done?' ✓':'';
+      var plHtml=lanes>1?'<span class="fo-lane">'+((e.loaded_kg||0)/lanes).toFixed(1)+'/lane</span>':'';
+      return'<div class="fo-row"><span class="fo-name">'+e.name+'<span style="color:#4ecb4e">'+chk+'</span></span>'+
+        '<span class="fo-kg">'+(e.loaded_kg||0).toFixed(1)+' kg'+plHtml+'</span></div>';
     }).join('');
-    document.getElementById('fo-total').textContent=totL.toFixed(1)+' kg';
+    document.getElementById('fo-total').textContent=totLoaded.toFixed(1)+' kg';
+    var lr=document.getElementById('fo-lane-row');
+    if(lanes>1){lr.style.display='';document.getElementById('fo-per-lane').textContent=(totLoaded/lanes).toFixed(1)+' kg/lane';}
+    else lr.style.display='none';
     return;
   }
-  inFeedout=false;
   document.getElementById('load').style.display='';
   document.getElementById('fo').style.display='none';
 
@@ -668,7 +696,7 @@ function render(s){
   document.getElementById('ov-lbl').textContent=doneCount+'/'+ents.length+' ready';
   document.getElementById('ov-pct').textContent=ovPct+'%';
   document.getElementById('ov-fill').style.width=ovPct+'%';
-  document.getElementById('fo-btn').disabled=!allDone;
+  document.getElementById('fo-btn').disabled=false;
 }
 function poll(){fetch('/api/status').then(function(r){return r.json()}).then(render).catch(function(){})}
 poll();
