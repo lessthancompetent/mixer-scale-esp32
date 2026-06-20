@@ -376,6 +376,48 @@
     .btn-success { background: var(--green); color: #fff; }
     .btn-warning { background: var(--orange); color: #fff; }
     .btn-muted { background: var(--border); color: var(--text); }
+
+    /* ── Ingredient modal ── */
+    .ing-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 200;
+      align-items: flex-start; justify-content: center; padding: 1rem;
+    }
+    .ing-modal-overlay.open { display: flex; }
+    .ing-modal-inner {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem;
+      width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto;
+      margin-top: 60px;
+    }
+    .ing-modal-inner h3 { font-size: 1rem; margin-bottom: 0.75rem; }
+
+    /* ── Device settings tab ── */
+    .dev-pwd-overlay {
+      position: absolute; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 0.75rem; z-index: 5;
+      min-height: 300px;
+    }
+    .dev-pwd-overlay h3 { font-size: 1rem; color: var(--muted); }
+    .dev-table-wrap { overflow-x: auto; }
+    .dev-table-wrap table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .dev-table-wrap th { text-align: left; padding: 0.45rem 0.6rem; color: var(--muted);
+      border-bottom: 1px solid var(--border); }
+    .dev-table-wrap td { padding: 0.45rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .dev-type-badge {
+      display: inline-block; border-radius: 4px; padding: 0.1rem 0.45rem;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .dev-type-water    { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .dev-type-vat      { background: rgba(234,179,8,0.15);  color: var(--yellow); }
+    .dev-type-irrigator{ background: rgba(34,197,94,0.15);  color: var(--green);  }
+    .dev-type-feedmixer{ background: rgba(249,115,22,0.15); color: var(--orange); }
+    .dev-type-other    { background: rgba(107,114,128,0.2); color: var(--muted);  }
+    .dev-form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    @media (max-width:560px){ .dev-form-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -409,6 +451,7 @@
     <button class="tab-btn" onclick="switchTab('water')">Water Meters</button>
     <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
     <button class="tab-btn" onclick="switchTab('feedmixer')">Feed Mixer</button>
+    <button class="tab-btn" onclick="switchTab('devsettings')">Device Settings</button>
   </nav>
 
   <main>
@@ -619,93 +662,42 @@
 
     <!-- ── Feed Mixer tab ── -->
     <div id="tab-feedmixer" class="tab-panel">
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center">
+        <button class="btn-sm" style="background:var(--accent);color:#fff"
+                onclick="fmToggleHerdForm()">+ Add Herd</button>
+        <button class="btn-sm btn-warning" onclick="fmPushDevice(null)">&#x2191; Push all herds</button>
+        <button class="btn-sm" style="background:var(--border);color:var(--text);margin-left:auto"
+                onclick="fmOpenIngModal()">&#x1F4DA; Feed Library</button>
+      </div>
 
-      <!-- A. Device Settings -->
-      <div class="fm-section">
-        <button class="fm-collapsible-toggle" onclick="fmToggleSettings(this)">
-          <span id="fm-settings-arrow">&#9654;</span> Device Settings
-        </button>
-        <div class="fm-collapsible-body" id="fm-settings-body">
-          <div class="fm-row" style="margin-top:0.5rem">
-            <label style="min-width:120px;font-size:0.82rem;color:var(--muted)">DevEUI</label>
-            <input type="text" id="fm-dev-eui" class="fm-input" style="flex:1;min-width:180px" placeholder="0011223344556677">
-          </div>
-          <div class="fm-row">
-            <label style="min-width:120px;font-size:0.82rem;color:var(--muted)">ChirpStack API key</label>
-            <input type="text" id="fm-cs-api-key" class="fm-input" style="flex:1;min-width:180px" placeholder="API key">
-          </div>
-          <div class="fm-row">
-            <button class="btn-success btn-sm" onclick="fmSaveSettings()">Save</button>
-            <span id="fm-settings-msg" style="font-size:0.82rem;color:var(--green);display:none">Saved.</span>
-          </div>
+      <!-- Herd form -->
+      <div class="fm-inline-form" id="fm-herd-form">
+        <div class="fm-row">
+          <input type="text" id="fm-herd-name" class="fm-input" placeholder="Herd name" style="flex:1">
+        </div>
+        <div class="fm-row">
+          <label style="font-size:0.82rem;color:var(--muted);min-width:70px">Cows</label>
+          <input type="number" id="fm-herd-cows" class="fm-input" placeholder="100" min="1" style="width:80px">
+          <label style="font-size:0.82rem;color:var(--muted);min-width:80px;margin-left:0.5rem">Meals/day</label>
+          <input type="number" id="fm-herd-meals" class="fm-input" placeholder="2" min="1" max="10" style="width:70px">
+        </div>
+        <div class="fm-row">
+          <button class="btn-sm btn-success" onclick="fmSaveHerd()">Save</button>
+          <button class="btn-sm btn-muted" onclick="fmToggleHerdForm()">Cancel</button>
         </div>
       </div>
 
-      <div class="fm-grid">
+      <!-- Herds list -->
+      <div id="fm-herd-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
 
-        <!-- B. Ingredients Library -->
-        <div class="fm-section">
-          <h3>Ingredients Library</h3>
-          <button class="btn-sm" style="background:var(--accent);color:#fff;margin-bottom:0.6rem"
-                  onclick="fmToggleIngForm()">+ Add Ingredient</button>
-          <div class="fm-inline-form" id="fm-ing-form">
-            <div class="fm-row">
-              <input type="text" id="fm-ing-name" class="fm-input" placeholder="Name (e.g. Maize silage)" style="flex:1">
-            </div>
-            <div class="fm-row">
-              <label style="font-size:0.82rem;color:var(--muted);min-width:50px">DM %</label>
-              <input type="number" id="fm-ing-dm" class="fm-input" placeholder="32" min="0" max="100" step="0.1" style="width:80px">
-              <label class="avg14-label" style="margin-left:0.5rem">
-                <input type="checkbox" id="fm-ing-active" checked> Active
-              </label>
-            </div>
-            <div class="fm-row">
-              <button class="btn-sm btn-success" onclick="fmSaveIngredient()">Save</button>
-              <button class="btn-sm btn-muted" onclick="fmToggleIngForm()">Cancel</button>
-            </div>
-          </div>
-          <div id="fm-ing-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
-        </div>
-
-        <!-- C. Herds & Rations -->
-        <div class="fm-section">
-          <h3>Herds &amp; Rations</h3>
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem">
-            <button class="btn-sm" style="background:var(--accent);color:#fff"
-                    onclick="fmToggleHerdForm()">+ Add Herd</button>
-            <button class="btn-sm btn-warning" onclick="fmPushDevice(null)">Push all herds</button>
-          </div>
-          <div class="fm-inline-form" id="fm-herd-form">
-            <div class="fm-row">
-              <input type="text" id="fm-herd-name" class="fm-input" placeholder="Herd name" style="flex:1">
-            </div>
-            <div class="fm-row">
-              <label style="font-size:0.82rem;color:var(--muted);min-width:70px">Cows</label>
-              <input type="number" id="fm-herd-cows" class="fm-input" placeholder="100" min="1" style="width:80px">
-              <label style="font-size:0.82rem;color:var(--muted);min-width:80px;margin-left:0.5rem">Meals/day</label>
-              <input type="number" id="fm-herd-meals" class="fm-input" placeholder="2" min="1" max="10" style="width:70px">
-            </div>
-            <div class="fm-row">
-              <button class="btn-sm btn-success" onclick="fmSaveHerd()">Save</button>
-              <button class="btn-sm btn-muted" onclick="fmToggleHerdForm()">Cancel</button>
-            </div>
-          </div>
-          <div id="fm-herd-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
-        </div>
-
-      </div>
-
-      <!-- D. Feed Log -->
-      <div class="fm-section">
+      <!-- Feed Log -->
+      <div class="fm-section" style="margin-top:1rem">
         <h3>Feed Log</h3>
         <div class="table-wrap" style="margin-bottom:0">
           <table>
             <thead>
               <tr>
-                <th>Date / Time</th>
-                <th>Herd</th>
-                <th>Total kg</th>
-                <th>Steps</th>
+                <th>Date / Time</th><th>Herd</th><th>Total kg</th><th>Steps</th>
               </tr>
             </thead>
             <tbody id="fm-log-tbody">
@@ -714,8 +706,117 @@
           </table>
         </div>
       </div>
-
     </div><!-- #tab-feedmixer -->
+
+    <!-- ── Ingredient Library Modal ── -->
+    <div class="ing-modal-overlay" id="fm-ing-modal">
+      <div class="ing-modal-inner">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+          <h3 style="margin:0">Feed Library</h3>
+          <button class="btn-sm btn-muted" onclick="fmCloseIngModal()">&#x2715; Close</button>
+        </div>
+        <button class="btn-sm" style="background:var(--accent);color:#fff;margin-bottom:0.6rem"
+                onclick="fmToggleIngForm()">+ Add Feed</button>
+        <div class="fm-inline-form" id="fm-ing-form">
+          <div class="fm-row">
+            <input type="text" id="fm-ing-name" class="fm-input" placeholder="Name (e.g. Maize silage)" style="flex:1">
+          </div>
+          <div class="fm-row">
+            <label style="font-size:0.82rem;color:var(--muted);min-width:50px">DM %</label>
+            <input type="number" id="fm-ing-dm" class="fm-input" placeholder="32" min="0" max="100" step="0.1" style="width:80px">
+            <label class="avg14-label" style="margin-left:0.5rem">
+              <input type="checkbox" id="fm-ing-active" checked> Active
+            </label>
+          </div>
+          <div class="fm-row">
+            <button class="btn-sm btn-success" onclick="fmSaveIngredient()">Save</button>
+            <button class="btn-sm btn-muted" onclick="fmToggleIngForm()">Cancel</button>
+          </div>
+        </div>
+        <div id="fm-ing-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
+      </div>
+    </div>
+
+    <!-- ── Device Settings tab ── -->
+    <div id="tab-devsettings" class="tab-panel" style="position:relative">
+
+      <!-- Password lock overlay — shown until verified -->
+      <div id="dev-pwd-overlay" class="dev-pwd-overlay">
+        <h3>Enter your password to continue</h3>
+        <input type="password" id="dev-pwd-input" class="fm-input" placeholder="Password"
+               style="max-width:260px"
+               onkeydown="if(event.key==='Enter')devVerifyPwd()">
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-sm btn-success" onclick="devVerifyPwd()">Unlock</button>
+          <button class="btn-sm btn-muted" onclick="switchTab('vat')">Cancel</button>
+        </div>
+        <span id="dev-pwd-err" style="color:var(--red);font-size:0.82rem;display:none">Incorrect password</span>
+      </div>
+
+      <!-- Actual content (revealed after auth) -->
+      <div id="dev-content" style="display:none">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center">
+          <h2 style="font-size:1rem;flex:1">Registered Devices</h2>
+          <button class="btn-sm" style="background:var(--accent);color:#fff"
+                  onclick="devToggleForm()">+ Add Device</button>
+        </div>
+
+        <!-- Add / Edit form -->
+        <div class="fm-inline-form" id="dev-form" style="margin-bottom:1rem">
+          <div class="dev-form-grid">
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">Name / Label</label>
+              <input type="text" id="dev-name" class="fm-input" placeholder="e.g. Cow Shed Water Meter" style="width:100%">
+            </div>
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">Type</label>
+              <select id="dev-type" class="fm-input" style="width:100%">
+                <option value="water">Water Meter</option>
+                <option value="vat">VAT Tap</option>
+                <option value="irrigator">Irrigator</option>
+                <option value="feedmixer">Feed Mixer</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">DevEUI</label>
+              <input type="text" id="dev-eui" class="fm-input" placeholder="0011223344556677" style="width:100%;font-family:monospace">
+            </div>
+            <div>
+              <label style="font-size:0.78rem;color:var(--muted)">AppEUI / JoinEUI</label>
+              <input type="text" id="dev-app-eui" class="fm-input" placeholder="0000000000000000" style="width:100%;font-family:monospace">
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:0.78rem;color:var(--muted)">AppKey (OTAA)</label>
+              <input type="text" id="dev-app-key" class="fm-input" placeholder="00112233445566778899aabbccddeeff" style="width:100%;font-family:monospace">
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:0.78rem;color:var(--muted)">Notes</label>
+              <input type="text" id="dev-notes" class="fm-input" placeholder="Location, purpose…" style="width:100%">
+            </div>
+          </div>
+          <div class="fm-row">
+            <button class="btn-sm btn-success" onclick="devSave()">Save</button>
+            <button class="btn-sm btn-muted" onclick="devToggleForm()">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Device table -->
+        <div class="dev-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Type</th><th>DevEUI</th><th>AppEUI</th><th>AppKey</th><th>Notes</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="dev-tbody">
+              <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- #tab-devsettings -->
 
   </main>
 </div>
@@ -1188,17 +1289,32 @@ async function refreshWater(){
 let activeTab='vat';
 
 function switchTab(tab){
+  if (tab==='devsettings' && !isDevAuthed()){
+    activeTab=tab;
+    const tabs=['vat','water','irrigator','feedmixer','devsettings'];
+    document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+      b.classList.toggle('active', tabs[i]===tab);
+    });
+    tabs.forEach(t=>{
+      document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+    });
+    document.getElementById('dev-pwd-overlay').style.display='flex';
+    document.getElementById('dev-content').style.display='none';
+    setTimeout(()=>document.getElementById('dev-pwd-input').focus(),100);
+    return;
+  }
   activeTab=tab;
-  const tabs=['vat','water','irrigator','feedmixer'];
+  const tabs=['vat','water','irrigator','feedmixer','devsettings'];
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
     b.classList.toggle('active', tabs[i]===tab);
   });
   tabs.forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('active',t===tab);
   });
-  if (tab==='water')     refreshWater();
-  if (tab==='irrigator') irrInit();
-  if (tab==='feedmixer') fmInit();
+  if (tab==='water')       refreshWater();
+  if (tab==='irrigator')   irrInit();
+  if (tab==='feedmixer')   fmInit();
+  if (tab==='devsettings') devInit();
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1851,6 +1967,137 @@ async function fmLoadLog(){
 
 // ── Utility ───────────────────────────────────────────────────────────
 function _esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ── Ingredient Modal ──────────────────────────────────────────────────
+function fmOpenIngModal(){
+  document.getElementById('fm-ing-modal').classList.add('open');
+  fmLoadIngredients();
+}
+function fmCloseIngModal(){ document.getElementById('fm-ing-modal').classList.remove('open'); }
+
+// ── Toggle ingredient active status ──────────────────────────────────
+async function fmToggleIngActive(id, cur){
+  await api(`${FM}/ingredients/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:cur?0:1})});
+  fmLoadIngredients();
+}
+
+// ── Update fmLoadIngredients to make Active badge clickable ──────────
+// (override the previously defined function)
+async function fmLoadIngredients(){
+  const data = await api(FM+'/ingredients');
+  fmIngredients = data || [];
+  const el = document.getElementById('fm-ing-list');
+  if (!fmIngredients.length){
+    el.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No ingredients yet.</p>';
+    return;
+  }
+  el.innerHTML = fmIngredients.map(ing => `
+    <div class="fm-card" id="fm-ing-row-${ing.id}">
+      <span style="flex:1;font-weight:600;font-size:0.88rem">${_esc(ing.name)}</span>
+      <span class="fm-badge">${ing.dm_pct ?? '—'} % DM</span>
+      <button class="fm-badge ${ing.active ? 'fm-badge-green' : ''}"
+              style="border:none;cursor:pointer"
+              onclick="fmToggleIngActive(${ing.id},${ing.active})"
+              title="Click to toggle active">${ing.active ? 'Active' : 'Inactive'}</button>
+      <button class="btn-sm" style="background:var(--border);color:var(--text)"
+              onclick="fmStartEditIngredient(${ing.id})">Edit</button>
+      <button class="btn-sm btn-danger"
+              onclick="fmDeleteIngredient(${ing.id})">Del</button>
+    </div>
+  `).join('');
+}
+
+// ── Device Settings ──────────────────────────────────────────────────
+let _devAuthedAt = 0;
+function isDevAuthed(){ return Date.now() - _devAuthedAt < 10 * 60 * 1000; }
+let devEditId = null;
+
+async function devVerifyPwd(){
+  const pwd = document.getElementById('dev-pwd-input').value;
+  const r = await api('/api/verify-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+  if (!r || r.error){
+    document.getElementById('dev-pwd-err').style.display='inline';
+    return;
+  }
+  _devAuthedAt = Date.now();
+  document.getElementById('dev-pwd-input').value = '';
+  document.getElementById('dev-pwd-err').style.display = 'none';
+  document.getElementById('dev-pwd-overlay').style.display = 'none';
+  document.getElementById('dev-content').style.display = 'block';
+  devInit();
+}
+
+async function devInit(){
+  const rows = await api('/api/devices');
+  const tbody = document.getElementById('dev-tbody');
+  if (!rows || !rows.length){
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">No devices registered yet.</td></tr>';
+    return;
+  }
+  const TYPE_LABELS = {water:'Water Meter',vat:'VAT Tap',irrigator:'Irrigator',feedmixer:'Feed Mixer',other:'Other'};
+  tbody.innerHTML = rows.map(d=>`
+    <tr>
+      <td style="font-weight:600">${_esc(d.name)}</td>
+      <td><span class="dev-type-badge dev-type-${d.type}">${TYPE_LABELS[d.type]||d.type}</span></td>
+      <td style="font-family:monospace;font-size:0.78rem">${_esc(d.dev_eui)}</td>
+      <td style="font-family:monospace;font-size:0.78rem">${_esc(d.app_eui||'—')}</td>
+      <td style="font-family:monospace;font-size:0.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis"
+          title="${_esc(d.app_key||'')}">${d.app_key ? d.app_key.slice(0,8)+'…' : '—'}</td>
+      <td style="color:var(--muted);font-size:0.8rem">${_esc(d.notes||'')}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-sm" style="background:var(--border);color:var(--text)"
+                onclick="devStartEdit(${d.id})">Edit</button>
+        <button class="btn-sm btn-danger" onclick="devDelete(${d.id})">Del</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function devToggleForm(clear=true){
+  const form = document.getElementById('dev-form');
+  const open = form.classList.toggle('open');
+  if (!open || clear){ devEditId=null; ['dev-name','dev-eui','dev-app-eui','dev-app-key','dev-notes'].forEach(id=>document.getElementById(id).value=''); document.getElementById('dev-type').value='water'; }
+}
+
+function devStartEdit(id){
+  api('/api/devices').then(rows=>{
+    const d = rows && rows.find(r=>r.id===id);
+    if (!d) return;
+    devEditId = id;
+    document.getElementById('dev-name').value    = d.name;
+    document.getElementById('dev-eui').value     = d.dev_eui;
+    document.getElementById('dev-type').value    = d.type;
+    document.getElementById('dev-app-eui').value = d.app_eui||'';
+    document.getElementById('dev-app-key').value = d.app_key||'';
+    document.getElementById('dev-notes').value   = d.notes||'';
+    const form = document.getElementById('dev-form');
+    form.classList.add('open');
+    form.scrollIntoView({behavior:'smooth',block:'nearest'});
+  });
+}
+
+async function devSave(){
+  const body = {
+    name:    document.getElementById('dev-name').value.trim(),
+    dev_eui: document.getElementById('dev-eui').value.trim(),
+    type:    document.getElementById('dev-type').value,
+    app_eui: document.getElementById('dev-app-eui').value.trim(),
+    app_key: document.getElementById('dev-app-key').value.trim(),
+    notes:   document.getElementById('dev-notes').value.trim(),
+  };
+  if (!body.name || !body.dev_eui){ alert('Name and DevEUI are required'); return; }
+  const r = devEditId
+    ? await api(`/api/devices/${devEditId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    : await api('/api/devices',             {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (r && !r.error){ devToggleForm(true); devInit(); }
+  else alert((r&&r.error)||'Save failed');
+}
+
+async function devDelete(id){
+  if (!confirm('Delete this device?')) return;
+  await api(`/api/devices/${id}`,{method:'DELETE'});
+  devInit();
+}
 </script>
 </body>
 </html>

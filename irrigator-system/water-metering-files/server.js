@@ -68,6 +68,17 @@ db.exec(`
     farm_pulses  INTEGER NOT NULL DEFAULT 0,
     raw_payload  TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS devices (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    dev_eui    TEXT NOT NULL UNIQUE,
+    type       TEXT NOT NULL DEFAULT 'other',
+    app_eui    TEXT,
+    app_key    TEXT,
+    notes      TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
@@ -542,6 +553,52 @@ app.post('/api/water/report', requireAuth, async (req, res) => {
     console.error('[report]', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Device registry ─────────────────────────────────────────────────────────
+
+app.post('/api/verify-password', requireAuth, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+  if (!user || !bcrypt.compareSync(req.body.password || '', user.password))
+    return res.status(401).json({ error: 'Incorrect password' });
+  res.json({ ok: true });
+});
+
+app.get('/api/devices', requireAuth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM devices ORDER BY type, name').all());
+});
+
+app.post('/api/devices', requireAuth, (req, res) => {
+  const { name, dev_eui, type, app_eui, app_key, notes } = req.body;
+  if (!name || !dev_eui) return res.status(400).json({ error: 'name and dev_eui required' });
+  try {
+    const r = db.prepare(
+      'INSERT INTO devices (name, dev_eui, type, app_eui, app_key, notes) VALUES (?,?,?,?,?,?)'
+    ).run(name, dev_eui.toLowerCase(), type || 'other', app_eui || '', app_key || '', notes || '');
+    res.json(db.prepare('SELECT * FROM devices WHERE id=?').get(r.lastInsertRowid));
+  } catch (e) {
+    res.status(409).json({ error: 'DevEUI already registered' });
+  }
+});
+
+app.put('/api/devices/:id', requireAuth, (req, res) => {
+  const { name, dev_eui, type, app_eui, app_key, notes } = req.body;
+  const fields = [], vals = [];
+  if (name    !== undefined) { fields.push('name=?');    vals.push(name); }
+  if (dev_eui !== undefined) { fields.push('dev_eui=?'); vals.push(dev_eui.toLowerCase()); }
+  if (type    !== undefined) { fields.push('type=?');    vals.push(type); }
+  if (app_eui !== undefined) { fields.push('app_eui=?'); vals.push(app_eui); }
+  if (app_key !== undefined) { fields.push('app_key=?'); vals.push(app_key); }
+  if (notes   !== undefined) { fields.push('notes=?');   vals.push(notes); }
+  if (!fields.length) return res.status(400).json({ error: 'nothing to update' });
+  vals.push(req.params.id);
+  db.prepare(`UPDATE devices SET ${fields.join(',')} WHERE id=?`).run(...vals);
+  res.json(db.prepare('SELECT * FROM devices WHERE id=?').get(req.params.id));
+});
+
+app.delete('/api/devices/:id', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM devices WHERE id=?').run(req.params.id);
+  res.json({ deleted: Number(req.params.id) });
 });
 
 // ─── Feed Mixer ───────────────────────────────────────────────────────────────
