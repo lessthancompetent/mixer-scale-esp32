@@ -253,13 +253,18 @@ void onEvent(ev_t ev) {
       break;
     case EV_TXCOMPLETE:
       txPending = false;
-      if (LMIC.dataLen && (LMIC.txrxFlags & TXRX_PORT)) {
-        parseDownlink(LMIC.frame[LMIC.dataBeg - 1],
-                      LMIC.frame + LMIC.dataBeg, LMIC.dataLen);
+      Serial.printf("[LMIC] TX complete dataLen=%d flags=0x%02x\n",
+                    LMIC.dataLen, LMIC.txrxFlags);
+      if (LMIC.dataLen) {
+        uint8_t fPort = (LMIC.txrxFlags & TXRX_PORT)
+                        ? LMIC.frame[LMIC.dataBeg - 1] : 0;
+        Serial.printf("[LMIC] Downlink fPort=%d len=%d\n", fPort, LMIC.dataLen);
+        if (LMIC.txrxFlags & TXRX_PORT) {
+          parseDownlink(fPort, LMIC.frame + LMIC.dataBeg, LMIC.dataLen);
+        }
       } else {
         snprintf(loraStatus, sizeof(loraStatus), joined ? "LoRa OK" : "Joining LoRa...");
       }
-      Serial.printf("[LMIC] TX complete, dataLen=%d\n", LMIC.dataLen);
       break;
     default: break;
   }
