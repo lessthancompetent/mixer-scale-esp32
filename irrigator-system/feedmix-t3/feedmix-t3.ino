@@ -789,9 +789,9 @@ void loop() {
     lastEncMs  = now;
     scaleValid = true;
     if (digitalRead(ENC_DT) != encCur)
-      scaleKg += 50.0f;
-    else
       scaleKg = max(0.0f, scaleKg - 50.0f);
+    else
+      scaleKg += 50.0f;
     // Propagate to any tared steps (same logic as readScale)
     for (uint8_t i = 0; i < MAX_ENTRY; i++) {
       if (stepTare[i] >= 0) {
