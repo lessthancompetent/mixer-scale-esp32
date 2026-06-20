@@ -101,8 +101,11 @@ bool txPending = false;
 char loraStatus[34] = "Joining LoRa...";
 
 static osjob_t txjob;
+static osjob_t heartbeatJob;
 static uint8_t txBuf[64];
 static uint8_t txLen = 0;
+
+#define HEARTBEAT_MIN 5   // uplink interval in minutes — opens RX windows for Pi downlinks
 
 // Mutex protecting shared data written by LMIC task (Core 0) and read by HTTP (Core 1)
 static SemaphoreHandle_t dataMutex;
@@ -207,6 +210,26 @@ void sendFeedLog(uint8_t hi) {
   os_setCallback(&txjob, scheduleTx);
 }
 
+// ── Heartbeat uplink ─────────────────────────────────────────────────────────
+// Sends a 1-byte uplink on fPort=1 every HEARTBEAT_MIN minutes.
+// Class A devices can only receive downlinks in the RX windows that
+// follow an uplink, so this is what allows the Pi to deliver herd configs.
+void scheduleHeartbeat(osjob_t *j) {
+  os_setTimedCallback(j, os_getTime() + min2osticks(HEARTBEAT_MIN), doHeartbeat);
+}
+
+void doHeartbeat(osjob_t *j) {
+  if (!(LMIC.opmode & OP_TXRXPEND)) {
+    uint8_t pkt = 0x01;  // status byte — Pi ignores this port
+    LMIC_setTxData2(1, &pkt, 1, 0);
+    txPending = true;
+    snprintf(loraStatus, sizeof(loraStatus), "Heartbeat TX");
+    Serial.println("[HB] Uplink sent");
+  }
+  // Always reschedule — if TX was busy we still want the next window
+  scheduleHeartbeat(j);
+}
+
 // ── LMIC event handler ────────────────────────────────────────────────────────
 void onEvent(ev_t ev) {
   switch (ev) {
@@ -218,6 +241,8 @@ void onEvent(ev_t ev) {
       LMIC_setLinkCheckMode(0);
       snprintf(loraStatus, sizeof(loraStatus), "LoRa joined");
       Serial.println("[LMIC] Joined");
+      // Send first heartbeat immediately, then every HEARTBEAT_MIN minutes
+      doHeartbeat(&heartbeatJob);
       break;
     case EV_JOIN_FAILED:
       snprintf(loraStatus, sizeof(loraStatus), "Join failed — retry");
@@ -232,9 +257,9 @@ void onEvent(ev_t ev) {
         parseDownlink(LMIC.frame[LMIC.dataBeg - 1],
                       LMIC.frame + LMIC.dataBeg, LMIC.dataLen);
       } else {
-        snprintf(loraStatus, sizeof(loraStatus), "LoRa OK");
+        snprintf(loraStatus, sizeof(loraStatus), joined ? "LoRa OK" : "Joining LoRa...");
       }
-      Serial.println("[LMIC] TX complete");
+      Serial.printf("[LMIC] TX complete, dataLen=%d\n", LMIC.dataLen);
       break;
     default: break;
   }
