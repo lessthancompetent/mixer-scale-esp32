@@ -707,8 +707,9 @@ app.post('/api/feedmixer/push-device', requireAuth, async (req, res) => {
     // Send each active ingredient
     for (const ing of ingredients.filter(i => i.active)) {
       const pkt = encodeIngredientPacket(idx, ing.name, ing.dm_pct);
-      await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
-      queued.push(`ingredient[${idx}]=${ing.name}`);
+      const r = await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
+      console.log(`[FEEDMIX CS] ingredient[${idx}]=${ing.name} status=${r.status} body=${r.body}`);
+      if (r.status >= 200 && r.status < 300) queued.push(`ingredient[${idx}]=${ing.name}`);
       idx++;
     }
 
@@ -717,8 +718,9 @@ app.post('/api/feedmixer/push-device', requireAuth, async (req, res) => {
     for (const herd of herds) {
       if (!herdIds.includes(herd.id)) { herdIdx++; continue; }
       const pkt = encodeHerdPacket(herdIdx, herd.name, herd.num_cows, herd.meals_per_day, herd.entries || []);
-      await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
-      queued.push(`herd[${herdIdx}]=${herd.name}`);
+      const r = await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
+      console.log(`[FEEDMIX CS] herd[${herdIdx}]=${herd.name} status=${r.status} body=${r.body}`);
+      if (r.status >= 200 && r.status < 300) queued.push(`herd[${herdIdx}]=${herd.name}`);
       herdIdx++;
     }
 
