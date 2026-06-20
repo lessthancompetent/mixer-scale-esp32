@@ -688,15 +688,22 @@ function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
           if (flag === 0x80) trailerText = buf.slice(i + 5, i + 5 + len).toString('utf8');
           i += 5 + len;
         }
-        console.log(`[CS downlink] eui=${eui} fPort=${fPort} HTTP ${res.statusCode} trailer="${trailerText.trim()}"`);
+        // ChirpStack sends grpc-status in HTTP headers (not body trailer frames)
+        const grpcStatusHdr = res.headers['grpc-status'];
+        const grpcMsgHdr    = res.headers['grpc-message'];
+        const statusMatch   = trailerText.match(/grpc-status:\s*(\d+)/);
+        const grpcStatus    = grpcStatusHdr !== undefined
+          ? parseInt(grpcStatusHdr)
+          : (statusMatch ? parseInt(statusMatch[1]) : 0);
+        const grpcMsg = grpcMsgHdr !== undefined
+          ? decodeURIComponent(grpcMsgHdr)
+          : (trailerText.match(/grpc-message:\s*([^\r\n]*)/)||[])[1] || '';
+        console.log(`[CS downlink] eui=${eui} fPort=${fPort} HTTP ${res.statusCode} grpc-status=${grpcStatus} ${grpcMsg}`);
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          const statusMatch = trailerText.match(/grpc-status:\s*(\d+)/);
-          const grpcStatus  = statusMatch ? parseInt(statusMatch[1]) : 0;
           if (grpcStatus === 0) {
             resolve({ status: 200, body: 'queued' });
           } else {
-            const msgMatch = trailerText.match(/grpc-message:\s*([^\r\n]*)/);
-            reject(new Error(`gRPC ${grpcStatus}: ${msgMatch ? decodeURIComponent(msgMatch[1]) : trailerText.slice(0, 200)}`));
+            reject(new Error(`gRPC ${grpcStatus}: ${grpcMsg || buf.slice(0, 200).toString('utf8')}`));
           }
         } else {
           reject(new Error(`ChirpStack HTTP ${res.statusCode}: ${buf.slice(0, 200).toString('utf8')}`));
