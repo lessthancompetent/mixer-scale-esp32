@@ -462,7 +462,9 @@ void setup() {
 
   // Initialise LMIC first — it claims its SPI + timer resources before WiFi starts.
   // Starting WiFi before os_init() causes a timer conflict (EXCCAUSE 6 null-ptr crash).
-  SPI.begin();
+  // T3 v1.6.1 LoRa SPI pins: SCK=5, MISO=19, MOSI=27, NSS=18
+  // Must be explicit — default SPI.begin() uses CLK=18 which conflicts with LoRa NSS.
+  SPI.begin(5, 19, 27, 18);
   os_init();
   LMIC_reset();
 
