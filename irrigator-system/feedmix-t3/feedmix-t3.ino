@@ -55,8 +55,8 @@ Adafruit_SSD1306 oled(128, 64, &Wire, -1);
 // ── Scale serial (RS232 via TTL adapter) ─────────────────────────────────────
 // Expects a numeric float (kg) terminated by \r or \n.
 // e.g. "  1234.5\r\n"  or  "+001234.5 kg\r\n"
-#define SCALE_RX  16   // connect scale TX → T3 GPIO16
-#define SCALE_TX  17   // unused (TX to scale not needed)
+#define SCALE_RX   34   // input-only pin — connect scale TX here
+#define SCALE_TX   -1   // not used (we only receive from scale)
 #define SCALE_BAUD 9600
 
 WebServer httpServer(80);
@@ -753,7 +753,7 @@ void setup() {
   pinMode(ENC_DT,  INPUT_PULLUP);
   encLast = digitalRead(ENC_CLK);
 
-  // Scale serial — connect scale RS232 TX → GPIO16 via TTL adapter
+  // Scale serial — connect scale RS232 TX → GPIO34 via TTL adapter
   Serial2.begin(SCALE_BAUD, SERIAL_8N1, SCALE_RX, SCALE_TX);
 
   WiFi.mode(WIFI_AP);
