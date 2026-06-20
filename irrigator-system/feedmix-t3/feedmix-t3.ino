@@ -347,7 +347,7 @@ String buildStatusJson() {
       float   dm   = (iidx < numIng && ingredients[iidx].valid) ? ingredients[iidx].dm_pct : 30.0f;
       float   wet  = (dm > 0) ? (h.entries[i].kg_dm_per_cow * cows) / (dm / 100.0f) : 0;
       float   loaded = stepLoaded[i];
-      float   pct    = (wet > 0) ? min(100.0f, loaded / wet * 100.0f) : 0;
+      float   pct    = (wet > 0) ? (loaded / wet * 100.0f) : 0;
       bool    done   = (wet > 0) && (loaded >= wet - 0.5f);
       bool    tared  = (stepTare[i] >= 0);
       float   net    = tared ? max(0.0f, scaleKg - stepTare[i]) : 0;
@@ -492,9 +492,6 @@ select{width:100%;padding:9px 8px;background:#101810;color:#dde8dd;border:1px so
 .net-kg{color:#6ecb6e;font-weight:700}
 .btn-tare{background:#0a1a0a;color:#4a8a4a;border:1px solid #253525;border-radius:6px;padding:4px 10px;font-size:.75rem;cursor:pointer;touch-action:manipulation}
 .btn-tare.set{color:#aff5ae;border-color:#2a5a2a;background:#0d200d}
-.adj-row{display:flex;gap:4px}
-.adj{flex:1;padding:9px 0;font-size:.82rem;font-weight:700;background:#162516;color:#6ecb6e;border:1px solid #253525;border-radius:6px;cursor:pointer;text-align:center;touch-action:manipulation}
-.adj.mark{background:#1e4a1e;color:#aff5ae;border-color:#2a6a2a}
 .done-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .done-badge{color:#4ecb4e;font-weight:700;font-size:.9rem}
 .btn-undo{background:transparent;color:#3a4a3a;border:1px solid #253525;border-radius:6px;padding:5px 11px;font-size:.78rem;cursor:pointer;touch-action:manipulation}
@@ -642,32 +639,28 @@ function render(s){
 
   document.getElementById('steps').innerHTML=ents.map(function(e,i){
     var pct=e.pct||0;
-    var over=(e.loaded_kg||0)>e.wet_kg+0.4;
-    var fc='bar-fill'+(pct>=100?' hi':'')+(over?' over':'');
+    var over=pct>100;
+    var barW=Math.min(100,pct);
+    var fc='bar-fill'+(over?' over':pct>=100?' hi':'');
+    var pctLbl=over?'+'+((e.loaded_kg-e.wet_kg).toFixed(1))+' kg over':Math.round(pct)+'%';
     var scaleRow='';
     if(s.scaleValid){
       if(e.tared){
-        scaleRow='<div class="scale-row"><span class="net-kg">&#9878; net: '+(e.net_kg||0).toFixed(1)+' kg</span><button class="btn-tare set" onclick="tare('+i+')">Re-tare</button></div>';
+        scaleRow='<div class="scale-row"><span class="net-kg">&#9878; '+( e.net_kg||0).toFixed(1)+' kg net</span><button class="btn-tare set" onclick="tare('+i+')">Re-tare</button></div>';
       } else {
-        scaleRow='<div class="scale-row"><span style="color:#4a664a;font-size:.75rem">Scale connected</span><button class="btn-tare" onclick="tare('+i+')">&#9878; Tare &amp; Start</button></div>';
+        scaleRow='<div class="scale-row"><span style="color:#4a664a;font-size:.75rem">Scale ready</span><button class="btn-tare" onclick="tare('+i+')">&#9878; Tare &amp; Start</button></div>';
       }
     }
     if(e.done)return'<div class="card done">'+
-      '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+e.loaded_kg.toFixed(1)+'</em>/'+e.wet_kg+' kg</span></div>'+
-      '<div class="bar-track"><div class="'+fc+'" style="width:100%"></div></div>'+
-      '<div class="done-row"><span class="done-badge">✓ Loaded</span><button class="btn-undo" onclick="undo('+i+')">Undo</button></div>'+
+      '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+e.loaded_kg.toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pctLbl+'</span></div>'+
+      '<div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div>'+
+      '<div class="done-row"><span class="done-badge">&#10003; Loaded</span><button class="btn-undo" onclick="undo('+i+')">Undo</button></div>'+
       '</div>';
     return'<div class="card'+(e.tared?' active':'')+'">'+
-      '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+(e.loaded_kg||0).toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pct+'%</span></div>'+
-      '<div class="bar-track"><div class="'+fc+'" style="width:'+pct+'%"></div></div>'+
+      '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+(e.loaded_kg||0).toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pctLbl+'</span></div>'+
+      '<div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div>'+
       scaleRow+
-      '<div class="adj-row">'+
-        '<button class="adj" onclick="adj('+i+',-10)">-10</button>'+
-        '<button class="adj" onclick="adj('+i+',-1)">-1</button>'+
-        '<button class="adj mark" onclick="full('+i+')">Full</button>'+
-        '<button class="adj" onclick="adj('+i+',+1)">+1</button>'+
-        '<button class="adj" onclick="adj('+i+',+10)">+10</button>'+
-      '</div></div>';
+      '</div>';
   }).join('');
 
   var doneCount=ents.filter(function(e){return e.done}).length;
