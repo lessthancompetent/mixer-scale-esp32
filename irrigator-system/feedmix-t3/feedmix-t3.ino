@@ -329,7 +329,7 @@ String buildStatusJson() {
   j += "\"herds\":[";
   for (uint8_t i = 0; i < numHerd; i++) {
     if (i) j += ",";
-    j += "{\"idx\":" + String(herds[i].idx) + ",\"name\":\"" + String(herds[i].name) + "\"}";
+    j += "{\"idx\":" + String(herds[i].idx) + ",\"name\":\"" + String(herds[i].name) + "\",\"cows\":" + String(herds[i].num_cows) + "}";
   }
   j += "],";
 
@@ -380,8 +380,12 @@ void apiSetHerd() {
     if (idx < numHerd) {
       activeHerdIdx = idx;
       cowOverride   = 0;
-      memset(stepLoaded, 0, sizeof(stepLoaded));
-      for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
+      // fresh=1 comes from the pick screen (new load cycle) — resets weights.
+      // Without it (mid-load herd swap) loaded weights are preserved.
+      if (httpServer.arg("fresh") == "1") {
+        memset(stepLoaded, 0, sizeof(stepLoaded));
+        for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
+      }
     }
   }
   httpServer.send(200, "application/json", "{\"ok\":true}");
@@ -501,22 +505,37 @@ select{width:100%;padding:9px 8px;background:#101810;color:#dde8dd;border:1px so
 .ov-bar{height:11px;background:#050f05;border-radius:6px;overflow:hidden}
 .ov-fill{height:100%;border-radius:6px;background:#2d7a2d;transition:width .4s}
 .no-data{text-align:center;color:#2a3a2a;padding:40px 20px;font-size:.9rem}
+/* ── Pick screen ─────────────────────────────────── */
+#pick{display:none}
+.pick-title{text-align:center;padding:44px 16px 8px;color:#6ecb6e;font-size:1.6rem;font-weight:700}
+.pick-sub{text-align:center;color:#4a664a;font-size:.85rem;margin-bottom:24px}
+.pick-btn{display:block;width:calc(100% - 32px);margin:0 auto 12px;padding:18px 16px;background:#101810;border:1px solid #253525;border-radius:12px;color:#dde8dd;font-size:1.1rem;font-weight:600;text-align:left;cursor:pointer;touch-action:manipulation}
+.pick-btn:active{background:#1a3a1a;border-color:#3a6a3a}
+.pick-cows{float:right;font-size:.78rem;color:#4a664a;font-weight:400;line-height:1.6}
+.pick-no-data{text-align:center;color:#2a3a2a;padding:60px 20px;font-size:.9rem}
+/* ── Feedout screen ──────────────────────────────── */
 #fo{display:none;padding:0 16px}
-.fo-title{text-align:center;padding:22px 0 6px;color:#6ecb6e;font-size:1.1rem;font-weight:700}
-.fo-sub{text-align:center;color:#6a8a6a;font-size:.85rem;margin-bottom:10px}
-.fo-scale{text-align:center;font-size:1.3rem;font-weight:700;color:#aff5ae;margin-bottom:14px}
-.fo-scale.off{color:#2a3a2a}
-.lane-sec{margin:0 -16px 14px}
+.fo-title{text-align:center;padding:14px 0 4px;color:#6ecb6e;font-size:1rem;font-weight:700}
+.fo-sub{text-align:center;color:#6a8a6a;font-size:.8rem;margin-bottom:12px}
+.fo-wagon{margin:0 0 12px;padding:14px 16px;background:#0a1a0a;border:2px solid #2a5a2a;border-radius:14px;text-align:center}
+.fo-wagon-lbl{font-size:.6rem;color:#4a664a;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.fo-wagon-kg{font-size:3.4rem;font-weight:900;color:#aff5ae;line-height:1;letter-spacing:-1px}
+.fo-wagon-kg.off{color:#1a2a1a}
+.lane-sec{margin:0 -16px 10px}
 .lane-lbl{font-size:.65rem;color:#4a664a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;padding:0 16px}
 .lane-btns{display:flex;gap:8px;padding:0 16px}
-.lane-btn{flex:1;padding:11px 0;background:#101810;color:#4a664a;border:1px solid #253525;border-radius:8px;font-size:1.1rem;font-weight:700;cursor:pointer;touch-action:manipulation}
+.lane-btn{flex:1;padding:12px 0;background:#101810;color:#4a664a;border:1px solid #253525;border-radius:8px;font-size:1.15rem;font-weight:700;cursor:pointer;touch-action:manipulation}
 .lane-btn.active{background:#1a4a1a;color:#aff5ae;border-color:#3a7a3a}
-.fo-row{display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:1px solid #131f13;font-size:.9rem}
+.fo-per-lane-big{display:none;margin:0 0 12px;padding:10px 16px;background:#0d1e0d;border:1px solid #2a4a2a;border-radius:10px;justify-content:center;align-items:baseline;gap:6px}
+.fo-pl-val{font-size:2.6rem;font-weight:900;color:#6ecb6e;line-height:1}
+.fo-pl-unit{font-size:.9rem;color:#4a664a}
+.fo-rows-lbl{font-size:.6rem;color:#4a664a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+.fo-row{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #131f13;font-size:.9rem}
 .fo-name{color:#8ab88a}
 .fo-kg{display:flex;flex-direction:column;align-items:flex-end;color:#6ecb6e;font-weight:700}
 .fo-lane{color:#4a664a;font-size:.72rem;font-weight:400}
-.fo-total{display:flex;justify-content:space-between;padding:12px 0 0;font-size:1.05rem;font-weight:700;color:#aff5ae;border-top:2px solid #2a5a2a;margin-top:4px}
-.fo-total.sub{font-size:.9rem;font-weight:400;color:#6ecb6e;border-top:none;padding-top:5px;opacity:.75}
+.fo-total{display:flex;justify-content:space-between;padding:10px 0 0;font-size:1rem;font-weight:700;color:#aff5ae;border-top:2px solid #2a5a2a;margin-top:4px}
+/* ── Shared footer / buttons ─────────────────────── */
 footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f09;border-top:1px solid #1a2a1a;display:flex;gap:8px}
 .btn-fo{flex:1;padding:13px;background:#1a4a1a;color:#aff5ae;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;touch-action:manipulation}
 .btn-fo:disabled{background:#101810;color:#2a3a2a}
@@ -534,7 +553,15 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
   </div>
 </header>
 
-<div id="load">
+<!-- Herd picker — shown on startup and after each feedout complete -->
+<div id="pick">
+  <div class="pick-title">&#128004; Select Mob</div>
+  <div class="pick-sub">Choose which mob to feed</div>
+  <div id="pick-list"><div class="pick-no-data">No herds yet &#8212;<br>push from Pi first</div></div>
+</div>
+
+<!-- Loading view -->
+<div id="load" style="display:none">
   <div class="sec">
     <div class="lbl">Herd</div>
     <select id="herd-sel" onchange="setHerd(this.value)"></select>
@@ -551,14 +578,18 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
     <div class="ov-bar"><div class="ov-fill" id="ov-fill" style="width:0%"></div></div>
   </div>
   <footer>
-    <button class="btn-fo" id="fo-btn" disabled onclick="goFeedout()">&#128668; Start Feedout</button>
+    <button class="btn-fo" onclick="goFeedout()">&#128668; Feedout</button>
   </footer>
 </div>
 
+<!-- Feedout view -->
 <div id="fo">
   <div class="fo-title">&#128668; FEEDOUT MODE</div>
   <div class="fo-sub" id="fo-sub"></div>
-  <div class="fo-scale off" id="fo-scale">&#9878; -- kg</div>
+  <div class="fo-wagon">
+    <div class="fo-wagon-lbl">On wagon</div>
+    <div class="fo-wagon-kg off" id="fo-wagon-kg">-- kg</div>
+  </div>
   <div class="lane-sec">
     <div class="lane-lbl">Feed lanes</div>
     <div class="lane-btns">
@@ -568,103 +599,111 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
       <button class="lane-btn" onclick="setLanes(4)">4</button>
     </div>
   </div>
+  <div class="fo-per-lane-big" id="fo-per-lane-big">
+    <span class="fo-pl-val" id="fo-pl-val">--</span>
+    <span class="fo-pl-unit">kg / lane</span>
+  </div>
+  <div class="fo-rows-lbl">Loaded mix</div>
   <div id="fo-rows"></div>
   <div class="fo-total"><span>Total loaded</span><span id="fo-total">-- kg</span></div>
-  <div class="fo-total sub" id="fo-lane-row" style="display:none"><span>Per lane</span><span id="fo-per-lane"></span></div>
   <footer>
     <button class="btn-back" onclick="goLoad()">&#8592; Loading</button>
-    <button class="btn-log" onclick="finish()">&#10003; Log to Pi</button>
+    <button class="btn-log" onclick="finish()">&#10003; Log &amp; Done</button>
   </footer>
 </div>
 
 <div id="toast"></div>
 <script>
-var st={},inFeedout=false,lanes=1;
+var st={},inFeedout=false,lanes=1,herdChosen=false,prevKg=null,prevKgTs=0;
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.style.opacity=1;setTimeout(function(){e.style.opacity=0},2600)}
 function setLanes(n){lanes=n;render(st)}
+// pickHerd: fresh start — resets loaded weights on T3
+function pickHerd(i){herdChosen=true;inFeedout=false;fetch('/api/herd?idx='+i+'&fresh=1').then(poll)}
+// setHerd: mid-load swap — T3 keeps loaded weights
 function setHerd(i){fetch('/api/herd?idx='+i).then(poll)}
 function setCows(n){if(+n>0)fetch('/api/cows?n='+n).then(poll)}
 function adjCows(d){var el=document.getElementById('cow-n');var v=Math.max(1,(+el.value||0)+d);el.value=v;setCows(v)}
-function adj(i,d){
-  var e=st.herd&&st.herd.entries[i];
-  if(!e)return;
-  var kg=Math.max(0,Math.round(((e.loaded_kg||0)+d)*10)/10);
-  fetch('/api/step-set?step='+i+'&kg='+kg.toFixed(1)).then(poll);
-}
-function full(i){
-  var e=st.herd&&st.herd.entries[i];
-  if(!e)return;
-  fetch('/api/step-set?step='+i+'&kg='+e.wet_kg).then(poll);
-}
 function undo(i){fetch('/api/step-undo?step='+i).then(poll)}
 function tare(i){fetch('/api/tare?step='+i).then(poll)}
 function goFeedout(){inFeedout=true;render(st)}
 function goLoad(){inFeedout=false;render(st)}
 function finish(){
   fetch('/api/complete',{method:'POST'}).then(function(){
-    toast('Feed log sent to Pi ✓');inFeedout=false;poll();
+    toast('Feed log sent ✓');inFeedout=false;herdChosen=false;poll();
   });
 }
+function show(id){['pick','load','fo'].forEach(function(x){document.getElementById(x).style.display=x===id?'':'none';})}
 function render(s){
   st=s;
+  // ── Header ──────────────────────────────────────────
   document.getElementById('lora').textContent=s.lora||'';
   var sb=document.getElementById('scale-badge');
-  if(s.scaleValid){
-    sb.textContent='⚖ '+s.scaleKg.toFixed(1)+' kg';
-    sb.className='scale-badge';
-  } else {
-    sb.textContent='⚖ --.- kg';
-    sb.className='scale-badge off';
+  if(s.scaleValid){sb.textContent='⚖ '+s.scaleKg.toFixed(1)+' kg';sb.className='scale-badge';}
+  else{sb.textContent='⚖ --.- kg';sb.className='scale-badge off';}
+  // Auto-feedout: scale drops >50 kg within 5 s while in loading mode
+  if(s.scaleValid&&!inFeedout&&herdChosen&&prevKg!==null){
+    var now=Date.now();
+    if((prevKg-s.scaleKg)>50&&(now-prevKgTs)<5000&&s.herd&&s.herd.entries&&s.herd.entries.length)
+      inFeedout=true;
   }
+  if(s.scaleValid){prevKg=s.scaleKg;prevKgTs=Date.now();}
+  // ── Pick screen (no herds yet, or herd not chosen) ──
+  if(!s.numHerds){
+    show('pick');
+    document.getElementById('pick-list').innerHTML='<div class="pick-no-data">No herds yet —<br>push from Pi first</div>';
+    return;
+  }
+  // Always refresh pick list
+  document.getElementById('pick-list').innerHTML=(s.herds||[]).map(function(h){
+    return'<button class="pick-btn" onclick="pickHerd('+h.idx+')" ontouchstart="">'+
+      '<span class="pick-cows">'+h.cows+' cows</span>'+h.name+'</button>';
+  }).join('');
+  if(!herdChosen){show('pick');return;}
+  // ── No entries yet ───────────────────────────────────
+  if(!s.herd||!s.herd.entries||!s.herd.entries.length){
+    show('load');
+    document.getElementById('steps').innerHTML='<p class="no-data">No ingredients received.<br>Push herds from Pi.</p>';
+    document.getElementById('overall').style.display='none';
+    var sel2=document.getElementById('herd-sel');
+    if(s.herds&&s.herds.length)sel2.innerHTML=s.herds.map(function(h){return'<option value="'+h.idx+'">'+h.name+'</option>'}).join('');
+    return;
+  }
+  var ents=s.herd.entries;
+  var totT=0,totL=0;
+  ents.forEach(function(e){totT+=e.wet_kg;totL+=e.loaded_kg||0;});
+  var ovPct=totT>0?Math.min(100,Math.round(totL/totT*100)):0;
+  // ── Feedout view ─────────────────────────────────────
+  if(inFeedout){
+    show('fo');
+    document.getElementById('fo-sub').textContent=s.herd.name+' • '+s.herd.num_cows+' cows • '+s.herd.meals_per_day+'x/day';
+    var wkg=document.getElementById('fo-wagon-kg');
+    if(s.scaleValid){wkg.textContent=s.scaleKg.toFixed(0)+' kg';wkg.className='fo-wagon-kg';}
+    else{wkg.textContent='-- kg';wkg.className='fo-wagon-kg off';}
+    document.querySelectorAll('.lane-btn').forEach(function(b,i){b.className='lane-btn'+(i+1===lanes?' active':'');});
+    var plBig=document.getElementById('fo-per-lane-big');
+    if(lanes>1){
+      plBig.style.display='flex';
+      document.getElementById('fo-pl-val').textContent=(totL/lanes).toFixed(1);
+    } else plBig.style.display='none';
+    document.getElementById('fo-rows').innerHTML=ents.map(function(e){
+      var chk=e.done?'<span style="color:#4ecb4e"> ✓</span>':'';
+      var pl=lanes>1?'<span class="fo-lane">'+((e.loaded_kg||0)/lanes).toFixed(1)+'/lane</span>':'';
+      return'<div class="fo-row"><span class="fo-name">'+e.name+chk+'</span>'+
+        '<span class="fo-kg">'+(e.loaded_kg||0).toFixed(1)+' kg'+pl+'</span></div>';
+    }).join('');
+    document.getElementById('fo-total').textContent=totL.toFixed(1)+' kg';
+    return;
+  }
+  // ── Loading view ─────────────────────────────────────
+  show('load');
   var sel=document.getElementById('herd-sel');
   if(s.herds&&s.herds.length){
     if(sel.options.length!==s.herds.length)
       sel.innerHTML=s.herds.map(function(h){return'<option value="'+h.idx+'">'+h.name+'</option>'}).join('');
     sel.value=s.activeHerd;
-  } else {
-    sel.innerHTML='<option disabled>No herds — push from Pi first</option>';
   }
   var cn=document.getElementById('cow-n');
-  if(s.herd&&document.activeElement!==cn)cn.value=s.herd.num_cows;
-
-  if(!s.herd||!s.herd.entries||!s.herd.entries.length){
-    document.getElementById('steps').innerHTML='<p class="no-data">No ingredients received.<br>Push herds from Pi.</p>';
-    document.getElementById('overall').style.display='none';
-    document.getElementById('fo-btn').disabled=true;
-    document.getElementById('load').style.display='';
-    document.getElementById('fo').style.display='none';
-    return;
-  }
-  var ents=s.herd.entries;
-  var totT=0,totL=0,allDone=true;
-  ents.forEach(function(e){totT+=e.wet_kg;totL+=e.loaded_kg||0;if(!e.done)allDone=false;});
-  var ovPct=totT>0?Math.min(100,Math.round(totL/totT*100)):0;
-
-  if(inFeedout){
-    document.getElementById('load').style.display='none';
-    document.getElementById('fo').style.display='';
-    document.getElementById('fo-sub').textContent=s.herd.name+' • '+s.herd.num_cows+' cows • '+s.herd.meals_per_day+'x/day';
-    var fs=document.getElementById('fo-scale');
-    if(s.scaleValid){fs.textContent='⚖ '+s.scaleKg.toFixed(1)+' kg on wagon';fs.className='fo-scale';}
-    else{fs.textContent='⚖ -- kg';fs.className='fo-scale off';}
-    document.querySelectorAll('.lane-btn').forEach(function(b,i){b.className='lane-btn'+(i+1===lanes?' active':'');});
-    var totLoaded=0;
-    ents.forEach(function(e){totLoaded+=(e.loaded_kg||0);});
-    document.getElementById('fo-rows').innerHTML=ents.map(function(e){
-      var chk=e.done?' ✓':'';
-      var plHtml=lanes>1?'<span class="fo-lane">'+((e.loaded_kg||0)/lanes).toFixed(1)+'/lane</span>':'';
-      return'<div class="fo-row"><span class="fo-name">'+e.name+'<span style="color:#4ecb4e">'+chk+'</span></span>'+
-        '<span class="fo-kg">'+(e.loaded_kg||0).toFixed(1)+' kg'+plHtml+'</span></div>';
-    }).join('');
-    document.getElementById('fo-total').textContent=totLoaded.toFixed(1)+' kg';
-    var lr=document.getElementById('fo-lane-row');
-    if(lanes>1){lr.style.display='';document.getElementById('fo-per-lane').textContent=(totLoaded/lanes).toFixed(1)+' kg/lane';}
-    else lr.style.display='none';
-    return;
-  }
-  document.getElementById('load').style.display='';
-  document.getElementById('fo').style.display='none';
-
+  if(document.activeElement!==cn)cn.value=s.herd.num_cows;
   document.getElementById('steps').innerHTML=ents.map(function(e,i){
     var pct=e.pct||0;
     var over=pct>100;
@@ -673,11 +712,8 @@ function render(s){
     var pctLbl=over?'+'+((e.loaded_kg-e.wet_kg).toFixed(1))+' kg over':Math.round(pct)+'%';
     var scaleRow='';
     if(s.scaleValid){
-      if(e.tared){
-        scaleRow='<div class="scale-row"><span class="net-kg">&#9878; '+( e.net_kg||0).toFixed(1)+' kg net</span><button class="btn-tare set" onclick="tare('+i+')">Re-tare</button></div>';
-      } else {
-        scaleRow='<div class="scale-row"><span style="color:#4a664a;font-size:.75rem">Scale ready</span><button class="btn-tare" onclick="tare('+i+')">&#9878; Tare &amp; Start</button></div>';
-      }
+      if(e.tared)scaleRow='<div class="scale-row"><span class="net-kg">&#9878; '+(e.net_kg||0).toFixed(1)+' kg net</span><button class="btn-tare set" onclick="tare('+i+')">Re-tare</button></div>';
+      else scaleRow='<div class="scale-row"><span style="color:#4a664a;font-size:.75rem">Scale ready</span><button class="btn-tare" onclick="tare('+i+')">&#9878; Tare &amp; Start</button></div>';
     }
     if(e.done)return'<div class="card done">'+
       '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+e.loaded_kg.toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pctLbl+'</span></div>'+
@@ -687,16 +723,13 @@ function render(s){
     return'<div class="card'+(e.tared?' active':'')+'">'+
       '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+(e.loaded_kg||0).toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pctLbl+'</span></div>'+
       '<div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div>'+
-      scaleRow+
-      '</div>';
+      scaleRow+'</div>';
   }).join('');
-
   var doneCount=ents.filter(function(e){return e.done}).length;
   document.getElementById('overall').style.display='';
   document.getElementById('ov-lbl').textContent=doneCount+'/'+ents.length+' ready';
   document.getElementById('ov-pct').textContent=ovPct+'%';
   document.getElementById('ov-fill').style.width=ovPct+'%';
-  document.getElementById('fo-btn').disabled=false;
 }
 function poll(){fetch('/api/status').then(function(r){return r.json()}).then(render).catch(function(){})}
 poll();
