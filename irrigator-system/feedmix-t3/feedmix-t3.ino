@@ -215,7 +215,7 @@ void sendFeedLog(uint8_t hi) {
 // Class A devices can only receive downlinks in the RX windows that
 // follow an uplink, so this is what allows the Pi to deliver herd configs.
 void scheduleHeartbeat(osjob_t *j) {
-  os_setTimedCallback(j, os_getTime() + min2osticks(HEARTBEAT_MIN), doHeartbeat);
+  os_setTimedCallback(j, os_getTime() + sec2osticks(HEARTBEAT_MIN * 60), doHeartbeat);
 }
 
 void doHeartbeat(osjob_t *j) {
