@@ -633,44 +633,38 @@ function getFlaskFM(path) {
 
 function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
   return new Promise((resolve, reject) => {
-    const jsonBytes = Buffer.from(JSON.stringify({
-      queueItem: { devEui, confirmed: false, fPort, data: payloadBuf.toString('base64') },
-    }), 'utf8');
-    // gRPC-web frame: flag byte 0x00 (data frame) + 4-byte big-endian payload length
-    const body = Buffer.alloc(5 + jsonBytes.length);
-    body[0] = 0x00;
-    body.writeUInt32BE(jsonBytes.length, 1);
-    jsonBytes.copy(body, 5);
-
+    const eui  = devEui.toLowerCase().replace(/[:\-]/g, '');
+    const body = JSON.stringify({
+      queueItem: { confirmed: false, fPort, data: payloadBuf.toString('base64') },
+    });
     const req = require('http').request({
       hostname: CS_HOST,
       port:     CS_PORT,
-      path:     '/api.DeviceService/Enqueue',
+      path:     `/api/devices/${eui}/queue`,
       method:   'POST',
       headers: {
-        'Content-Type':   'application/grpc-web+json',
-        'X-Grpc-Web':     '1',
+        'Content-Type':   'application/json',
+        'Accept':         'application/json',
         'Authorization':  `Bearer ${apiKey}`,
-        'Content-Length': body.length,
+        'Content-Length': Buffer.byteLength(body),
       },
     }, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
         const raw = Buffer.concat(chunks).toString('utf8');
+        console.log(`[CS downlink] eui=${eui} fPort=${fPort} HTTP ${res.statusCode} ${raw.slice(0, 200)}`);
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          // Check for gRPC trailer error (grpc-status != 0) in response body
-          if (raw.includes('grpc-status') && !raw.includes('grpc-status: 0') && !raw.includes('grpc-status:0')) {
-            reject(new Error(`ChirpStack gRPC error: ${raw.slice(0, 200)}`));
-          } else {
-            resolve({ status: res.statusCode, body: 'queued via gRPC-web' });
-          }
+          resolve({ status: res.statusCode, body: raw });
         } else {
-          reject(new Error(`ChirpStack HTTP ${res.statusCode}: ${raw.slice(0, 200)}`));
+          reject(new Error(`ChirpStack HTTP ${res.statusCode}: ${raw.slice(0, 300)}`));
         }
       });
     });
-    req.on('error', reject);
+    req.on('error', err => {
+      console.error(`[CS downlink] connection error: ${err.message}`);
+      reject(err);
+    });
     req.write(body);
     req.end();
   });
