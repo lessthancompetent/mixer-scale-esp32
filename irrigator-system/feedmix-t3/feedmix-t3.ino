@@ -495,7 +495,9 @@ void loraTask(void *pv) {
   LMIC_startJoining();
   for (;;) {
     os_runloop_once();
-    // Check if HTTP/encoder requested a feed-log uplink
+    // Yield 1ms so loop() (priority 1) can run httpServer and updateOled.
+    // LMIC timing is hardware-interrupt driven, so 1ms gaps are safe.
+    vTaskDelay(1);
     if (wantSendLog) {
       wantSendLog = false;
       xSemaphoreTake(dataMutex, portMAX_DELAY);
