@@ -31,12 +31,11 @@
 #include <Adafruit_SSD1306.h>
 
 // ── LoRaWAN credentials — fill these from ChirpStack ─────────────────────
-// DevEUI: LSB first (reverse the hex string from ChirpStack)
-// Example: ChirpStack shows "0102030405060708" → { 0x08,0x07,...,0x01 }
+// DevEUI: LSB first — 0000000000000000 reversed
 static const u1_t PROGMEM DEVEUI[8]  = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
 // JoinEUI: all-zeros for ChirpStack, LSB first
 static const u1_t PROGMEM APPEUI[8]  = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
-// AppKey: MSB first (copy exactly from ChirpStack)
+// AppKey: MSB first — ROTATED-KEY-REMOVED
 static const u1_t PROGMEM APPKEY[16] = {
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
