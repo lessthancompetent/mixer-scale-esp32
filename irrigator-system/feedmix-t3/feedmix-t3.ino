@@ -561,7 +561,7 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
 </div>
 
 <!-- Loading view -->
-<div id="load" style="display:none">
+<div id="load">
   <div class="sec">
     <div class="lbl">Herd</div>
     <select id="herd-sel" onchange="setHerd(this.value)"></select>
@@ -617,9 +617,7 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
 var st={},inFeedout=false,lanes=1,herdChosen=false,prevKg=null,prevKgTs=0;
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.style.opacity=1;setTimeout(function(){e.style.opacity=0},2600)}
 function setLanes(n){lanes=n;render(st)}
-// pickHerd: fresh start — resets loaded weights on T3
 function pickHerd(i){herdChosen=true;inFeedout=false;fetch('/api/herd?idx='+i+'&fresh=1').then(poll)}
-// setHerd: mid-load swap — T3 keeps loaded weights
 function setHerd(i){fetch('/api/herd?idx='+i).then(poll)}
 function setCows(n){if(+n>0)fetch('/api/cows?n='+n).then(poll)}
 function adjCows(d){var el=document.getElementById('cow-n');var v=Math.max(1,(+el.value||0)+d);el.value=v;setCows(v)}
@@ -635,31 +633,24 @@ function finish(){
 function show(id){['pick','load','fo'].forEach(function(x){document.getElementById(x).style.display=x===id?'block':'none';})}
 function render(s){
   st=s;
-  // ── Header ──────────────────────────────────────────
   document.getElementById('lora').textContent=s.lora||'';
   var sb=document.getElementById('scale-badge');
   if(s.scaleValid){sb.textContent='⚖ '+s.scaleKg.toFixed(1)+' kg';sb.className='scale-badge';}
   else{sb.textContent='⚖ --.- kg';sb.className='scale-badge off';}
-  // Auto-feedout: scale drops >50 kg within 5 s while in loading mode
   if(s.scaleValid&&!inFeedout&&herdChosen&&prevKg!==null){
     var now=Date.now();
-    if((prevKg-s.scaleKg)>50&&(now-prevKgTs)<5000&&s.herd&&s.herd.entries&&s.herd.entries.length)
-      inFeedout=true;
+    if((prevKg-s.scaleKg)>50&&(now-prevKgTs)<5000&&s.herd&&s.herd.entries&&s.herd.entries.length)inFeedout=true;
   }
   if(s.scaleValid){prevKg=s.scaleKg;prevKgTs=Date.now();}
-  // ── Pick screen (no herds yet, or herd not chosen) ──
   if(!s.numHerds){
     show('pick');
-    document.getElementById('pick-list').innerHTML='<div class="pick-no-data">No herds yet —<br>push from Pi first</div>';
+    document.getElementById('pick-list').innerHTML='<div class="pick-no-data">No herds yet &mdash;<br>push from Pi first</div>';
     return;
   }
-  // Always refresh pick list
   document.getElementById('pick-list').innerHTML=(s.herds||[]).map(function(h){
-    return'<button class="pick-btn" onclick="pickHerd('+h.idx+')" ontouchstart="">'+
-      '<span class="pick-cows">'+h.cows+' cows</span>'+h.name+'</button>';
+    return'<button class="pick-btn" onclick="pickHerd('+h.idx+')" ontouchstart=""><span class="pick-cows">'+h.cows+' cows</span>'+h.name+'</button>';
   }).join('');
   if(!herdChosen){show('pick');return;}
-  // ── No entries yet ───────────────────────────────────
   if(!s.herd||!s.herd.entries||!s.herd.entries.length){
     show('load');
     document.getElementById('steps').innerHTML='<p class="no-data">No ingredients received.<br>Push herds from Pi.</p>';
@@ -668,11 +659,9 @@ function render(s){
     if(s.herds&&s.herds.length)sel2.innerHTML=s.herds.map(function(h){return'<option value="'+h.idx+'">'+h.name+'</option>'}).join('');
     return;
   }
-  var ents=s.herd.entries;
-  var totT=0,totL=0;
+  var ents=s.herd.entries,totT=0,totL=0;
   ents.forEach(function(e){totT+=e.wet_kg;totL+=e.loaded_kg||0;});
   var ovPct=totT>0?Math.min(100,Math.round(totL/totT*100)):0;
-  // ── Feedout view ─────────────────────────────────────
   if(inFeedout){
     show('fo');
     document.getElementById('fo-sub').textContent=s.herd.name+' • '+s.herd.num_cows+' cows • '+s.herd.meals_per_day+'x/day';
@@ -681,52 +670,38 @@ function render(s){
     else{wkg.textContent='-- kg';wkg.className='fo-wagon-kg off';}
     document.querySelectorAll('.lane-btn').forEach(function(b,i){b.className='lane-btn'+(i+1===lanes?' active':'');});
     var plBig=document.getElementById('fo-per-lane-big');
-    if(lanes>1){
-      plBig.style.display='flex';
-      document.getElementById('fo-pl-val').textContent=(totL/lanes).toFixed(1);
-    } else plBig.style.display='none';
+    if(lanes>1){plBig.style.display='flex';document.getElementById('fo-pl-val').textContent=(totL/lanes).toFixed(1);}
+    else plBig.style.display='none';
     document.getElementById('fo-rows').innerHTML=ents.map(function(e){
-      var chk=e.done?'<span style="color:#4ecb4e"> ✓</span>':'';
+      var chk=e.done?'<span style="color:#4ecb4e"> &#10003;</span>':'';
       var pl=lanes>1?'<span class="fo-lane">'+((e.loaded_kg||0)/lanes).toFixed(1)+'/lane</span>':'';
-      return'<div class="fo-row"><span class="fo-name">'+e.name+chk+'</span>'+
-        '<span class="fo-kg">'+(e.loaded_kg||0).toFixed(1)+' kg'+pl+'</span></div>';
+      return'<div class="fo-row"><span class="fo-name">'+e.name+chk+'</span><span class="fo-kg">'+(e.loaded_kg||0).toFixed(1)+' kg'+pl+'</span></div>';
     }).join('');
     document.getElementById('fo-total').textContent=totL.toFixed(1)+' kg';
     return;
   }
-  // ── Loading view ─────────────────────────────────────
   show('load');
   var sel=document.getElementById('herd-sel');
   if(s.herds&&s.herds.length){
-    if(sel.options.length!==s.herds.length)
-      sel.innerHTML=s.herds.map(function(h){return'<option value="'+h.idx+'">'+h.name+'</option>'}).join('');
+    if(sel.options.length!==s.herds.length)sel.innerHTML=s.herds.map(function(h){return'<option value="'+h.idx+'">'+h.name+'</option>'}).join('');
     sel.value=s.activeHerd;
   }
   var cn=document.getElementById('cow-n');
   if(document.activeElement!==cn)cn.value=s.herd.num_cows;
   document.getElementById('steps').innerHTML=ents.map(function(e,i){
-    var pct=e.pct||0;
-    var over=pct>100;
-    var barW=Math.min(100,pct);
+    var pct=e.pct||0,over=pct>100,barW=Math.min(100,pct);
     var fc='bar-fill'+(over?' over':pct>=100?' hi':'');
     var pctLbl=over?'+'+((e.loaded_kg-e.wet_kg).toFixed(1))+' kg over':Math.round(pct)+'%';
-    var scaleRow='';
+    var scRow='';
     if(s.scaleValid){
-      if(e.tared)scaleRow='<div class="scale-row"><span class="net-kg">&#9878; '+(e.net_kg||0).toFixed(1)+' kg net</span><button class="btn-tare set" onclick="tare('+i+')">Re-tare</button></div>';
-      else scaleRow='<div class="scale-row"><span style="color:#4a664a;font-size:.75rem">Scale ready</span><button class="btn-tare" onclick="tare('+i+')">&#9878; Tare &amp; Start</button></div>';
+      if(e.tared)scRow='<div class="scale-row"><span class="net-kg">&#9878; '+(e.net_kg||0).toFixed(1)+' kg net</span><button class="btn-tare set" onclick="tare('+i+')">Re-tare</button></div>';
+      else scRow='<div class="scale-row"><span style="color:#4a664a;font-size:.75rem">Scale ready</span><button class="btn-tare" onclick="tare('+i+')">&#9878; Tare &amp; Start</button></div>';
     }
-    if(e.done)return'<div class="card done">'+
-      '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+e.loaded_kg.toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pctLbl+'</span></div>'+
-      '<div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div>'+
-      '<div class="done-row"><span class="done-badge">&#10003; Loaded</span><button class="btn-undo" onclick="undo('+i+')">Undo</button></div>'+
-      '</div>';
-    return'<div class="card'+(e.tared?' active':'')+'">'+
-      '<div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+(e.loaded_kg||0).toFixed(1)+'</em>/'+e.wet_kg+' kg · '+pctLbl+'</span></div>'+
-      '<div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div>'+
-      scaleRow+'</div>';
+    if(e.done)return'<div class="card done"><div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+e.loaded_kg.toFixed(1)+'</em>/'+e.wet_kg+' kg &middot; '+pctLbl+'</span></div><div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div><div class="done-row"><span class="done-badge">&#10003; Loaded</span><button class="btn-undo" onclick="undo('+i+')">Undo</button></div></div>';
+    return'<div class="card'+(e.tared?' active':'')+'"><div class="card-hdr"><span class="card-name">'+e.name+'</span><span class="card-qty"><em>'+(e.loaded_kg||0).toFixed(1)+'</em>/'+e.wet_kg+' kg &middot; '+pctLbl+'</span></div><div class="bar-track"><div class="'+fc+'" style="width:'+barW+'%"></div></div>'+scRow+'</div>';
   }).join('');
   var doneCount=ents.filter(function(e){return e.done}).length;
-  document.getElementById('overall').style.display='';
+  document.getElementById('overall').style.display='block';
   document.getElementById('ov-lbl').textContent=doneCount+'/'+ents.length+' ready';
   document.getElementById('ov-pct').textContent=ovPct+'%';
   document.getElementById('ov-fill').style.width=ovPct+'%';
