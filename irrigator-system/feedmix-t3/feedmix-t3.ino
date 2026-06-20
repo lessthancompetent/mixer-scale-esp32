@@ -46,6 +46,11 @@ const lmic_pinmap lmic_pins = {
   .dio  = { 26, 33, 32 },
 };
 
+// ── Encoder (optional) ───────────────────────────────────────────────────────
+#define ENC_SW   2    // push button
+#define ENC_CLK  4    // rotary A
+#define ENC_DT   25   // rotary B
+
 // ── OLED ──────────────────────────────────────────────────────────────────────
 #define OLED_SDA 21
 #define OLED_SCL 22
@@ -99,7 +104,11 @@ static osjob_t txjob;
 static uint8_t txBuf[64];
 static uint8_t txLen = 0;
 
-unsigned long lastOledMs = 0;
+unsigned long lastOledMs  = 0;
+int           encLast     = HIGH;
+bool          swWasDown   = false;
+unsigned long swDownAt    = 0;
+unsigned long lastEncMs   = 0;
 
 // ── Downlink parser (fPort=10) ────────────────────────────────────────────────
 void parseDownlink(uint8_t fPort, const uint8_t *buf, uint8_t len) {
@@ -460,6 +469,11 @@ void setup() {
   oled.setCursor(0, 12); oled.print("Init LoRa...");
   oled.display();
 
+  pinMode(ENC_SW,  INPUT_PULLUP);
+  pinMode(ENC_CLK, INPUT_PULLUP);
+  pinMode(ENC_DT,  INPUT_PULLUP);
+  encLast = digitalRead(ENC_CLK);
+
   // Initialise LMIC first — it claims its SPI + timer resources before WiFi starts.
   // Starting WiFi before os_init() causes a timer conflict (EXCCAUSE 6 null-ptr crash).
   // T3 v1.6.1 LoRa SPI pins: SCK=5, MISO=19, MOSI=27, NSS=18
@@ -501,11 +515,45 @@ void setup() {
 
 // ── Loop ──────────────────────────────────────────────────────────────────────
 void loop() {
-  os_runloop_once();       // LMIC scheduler — must not be blocked
-  httpServer.handleClient(); // serve phone UI
+  os_runloop_once();
+  httpServer.handleClient();
 
-  if (millis() - lastOledMs >= 1000) {
-    lastOledMs = millis();
+  unsigned long now = millis();
+
+  // Encoder: CW = next herd, CCW = previous herd
+  int encCur = digitalRead(ENC_CLK);
+  if (encCur != encLast && encCur == LOW && (now - lastEncMs > 50)) {
+    lastEncMs = now;
+    if (numHerd > 0) {
+      if (digitalRead(ENC_DT) != encCur) {
+        activeHerdIdx = (activeHerdIdx + 1) % numHerd;
+      } else {
+        activeHerdIdx = (activeHerdIdx == 0) ? numHerd - 1 : activeHerdIdx - 1;
+      }
+      cowOverride = 0;
+      memset(stepDone, 0, sizeof(stepDone));
+    }
+  }
+  encLast = encCur;
+
+  // Encoder switch: short press = send feed log, long press (>1s) = reset step marks
+  bool swDown = (digitalRead(ENC_SW) == LOW);
+  if (swDown && !swWasDown) { swDownAt = now; swWasDown = true; }
+  if (!swDown && swWasDown) {
+    unsigned long held = now - swDownAt;
+    if (held > 1000) {
+      memset(stepDone, 0, sizeof(stepDone));
+      snprintf(loraStatus, sizeof(loraStatus), "Steps reset");
+    } else if (held > 50) {
+      uint8_t hi = numHerd > 0 ? activeHerdIdx % numHerd : 0;
+      sendFeedLog(hi);
+      memset(stepDone, 0, sizeof(stepDone));
+    }
+    swWasDown = false;
+  }
+
+  if (now - lastOledMs >= 1000) {
+    lastOledMs = now;
     updateOled();
   }
 }
