@@ -530,8 +530,10 @@ void setup() {
   oled.setCursor(0, 34); oled.print("Starting LoRa...");
   oled.display();
 
-  // LMIC runs on Core 0; WiFi/HTTP runs on Core 1 (loop())
-  xTaskCreatePinnedToCore(loraTask, "LoRa", 8192, NULL, 2, NULL, 0);
+  // LMIC on Core 1 (APP_CPU), priority 3 — higher than loop() (priority 1).
+  // Core 0 (PRO_CPU) is reserved for the WiFi protocol stack (priority 23);
+  // pinning LMIC there starves it and causes EV_TXCOMPLETE to never fire.
+  xTaskCreatePinnedToCore(loraTask, "LoRa", 16384, NULL, 3, NULL, 1);
 }
 
 // ── Loop (Core 1 — WiFi + HTTP + encoder + OLED) ─────────────────────────────
