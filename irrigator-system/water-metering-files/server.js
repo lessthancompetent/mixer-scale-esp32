@@ -665,7 +665,7 @@ function encodeHerdPacket(idx, name, numCows, mealsPerDay, entries) {
   for (let i = 0; i < maxEntries; i++) {
     const e   = entries[i];
     const off = 16 + i * 3;
-    buf[off]  = (e.ingredient_id - 1) & 0xff;
+    buf[off]  = (e.dl_idx !== undefined ? e.dl_idx : e.ingredient_id - 1) & 0xff;
     buf.writeUInt16BE(Math.round(e.kg_dm_per_cow * 100) & 0xffff, off + 1);
   }
   return buf;
@@ -688,22 +688,29 @@ app.post('/api/feedmixer/push-device', requireAuth, async (req, res) => {
       : herds.map(h => h.id);
 
     const queued = [];
-    let   idx    = 0;
+    const activeIngs = ingredients.filter(i => i.active);
+
+    // Map ingredient DB id → downlink index
+    const ingDlIdx = {};
+    activeIngs.forEach((ing, i) => { ingDlIdx[ing.id] = i; });
 
     // Send each active ingredient
-    for (const ing of ingredients.filter(i => i.active)) {
-      const pkt = encodeIngredientPacket(idx, ing.name, ing.dm_pct);
+    for (let i = 0; i < activeIngs.length; i++) {
+      const ing = activeIngs[i];
+      const pkt = encodeIngredientPacket(i, ing.name, ing.dm_pct);
       const r = await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
-      console.log(`[FEEDMIX CS] ingredient[${idx}]=${ing.name} status=${r.status} body=${r.body}`);
-      if (r.status >= 200 && r.status < 300) queued.push(`ingredient[${idx}]=${ing.name}`);
-      idx++;
+      console.log(`[FEEDMIX CS] ingredient[${i}]=${ing.name} status=${r.status} body=${r.body}`);
+      if (r.status >= 200 && r.status < 300) queued.push(`ingredient[${i}]=${ing.name}`);
     }
 
     // Send each selected herd
     let herdIdx = 0;
     for (const herd of herds) {
       if (!herdIds.includes(herd.id)) { herdIdx++; continue; }
-      const pkt = encodeHerdPacket(herdIdx, herd.name, herd.num_cows, herd.meals_per_day, herd.entries || []);
+      const mappedEntries = (herd.entries || []).map(e => ({
+        ...e, dl_idx: ingDlIdx[e.ingredient_id] ?? 0,
+      }));
+      const pkt = encodeHerdPacket(herdIdx, herd.name, herd.num_cows, herd.meals_per_day, mappedEntries);
       const r = await sendChirpStackDownlink(devEui, apiKey, 10, pkt);
       console.log(`[FEEDMIX CS] herd[${herdIdx}]=${herd.name} status=${r.status} body=${r.body}`);
       if (r.status >= 200 && r.status < 300) queued.push(`herd[${herdIdx}]=${herd.name}`);
