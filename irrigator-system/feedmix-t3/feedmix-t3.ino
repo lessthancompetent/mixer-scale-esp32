@@ -443,7 +443,7 @@ void updateOled() {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  delay(500);
   Serial.println("=== FeedMix Wagon ===");
 
   memset(ingredients, 0, sizeof(ingredients));
@@ -457,10 +457,25 @@ void setup() {
   oled.setTextSize(1);
   oled.clearDisplay();
   oled.setCursor(0,  0); oled.print("FeedMix Wagon");
-  oled.setCursor(0, 12); oled.print("Starting AP...");
+  oled.setCursor(0, 12); oled.print("Init LoRa...");
   oled.display();
 
+  // Initialise LMIC first — it claims its SPI + timer resources before WiFi starts.
+  // Starting WiFi before os_init() causes a timer conflict (EXCCAUSE 6 null-ptr crash).
+  SPI.begin();
+  os_init();
+  LMIC_reset();
+
+  oled.clearDisplay();
+  oled.setCursor(0,  0); oled.print("FeedMix Wagon");
+  oled.setCursor(0, 12); oled.print("Starting WiFi AP...");
+  oled.display();
+
+  // WiFi AP — disable power-save so the radio doesn't sleep between HTTP requests
+  WiFi.mode(WIFI_AP);
+  WiFi.setSleep(false);
   WiFi.softAP(AP_SSID, AP_PASS);
+  delay(100);   // let AP IP stack settle
   Serial.printf("AP: %s  IP: %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
 
   httpServer.on("/",              handleRoot);
@@ -479,8 +494,6 @@ void setup() {
   oled.setCursor(0, 34); oled.print("Joining LoRa...");
   oled.display();
 
-  os_init();
-  LMIC_reset();
   LMIC_startJoining();
 }
 
