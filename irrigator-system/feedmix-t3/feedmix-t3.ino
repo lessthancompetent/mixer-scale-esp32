@@ -632,7 +632,7 @@ function finish(){
     toast('Feed log sent ✓');inFeedout=false;herdChosen=false;poll();
   });
 }
-function show(id){['pick','load','fo'].forEach(function(x){document.getElementById(x).style.display=x===id?'':'none';})}
+function show(id){['pick','load','fo'].forEach(function(x){document.getElementById(x).style.display=x===id?'block':'none';})}
 function render(s){
   st=s;
   // ── Header ──────────────────────────────────────────
