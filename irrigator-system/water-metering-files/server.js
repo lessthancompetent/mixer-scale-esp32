@@ -645,13 +645,20 @@ function _pbVarint(n) {
 function _encodeEnqueue(devEui, fPort, data) {
   const euiBuf = Buffer.from(devEui, 'ascii');
   const inner  = Buffer.concat([
-    Buffer.from([0x0a]), _pbVarint(euiBuf.length), euiBuf,  // field 1 dev_eui
-    Buffer.from([0x18]), _pbVarint(fPort),                   // field 3 f_port
-    Buffer.from([0x22]), _pbVarint(data.length), data,       // field 4 data
+    Buffer.from([0x12]), _pbVarint(euiBuf.length), euiBuf,  // field 2 dev_eui (string)
+    Buffer.from([0x18, 0x00]),                               // field 3 confirmed=false (bool)
+    Buffer.from([0x20]), _pbVarint(fPort),                   // field 4 f_port (uint32)
+    Buffer.from([0x2a]), _pbVarint(data.length), data,       // field 5 data (bytes)
   ]);
-  return Buffer.concat([
-    Buffer.from([0x0a]), _pbVarint(inner.length), inner,     // field 1 queue_item
+  const outer = Buffer.concat([
+    Buffer.from([0x0a]), _pbVarint(inner.length), inner,     // field 1 queue_item (message)
   ]);
+  console.log('[CS proto] frame hex: ' + Buffer.concat([
+    Buffer.from([0x00]),
+    Buffer.from([0x00, 0x00, 0x00, outer.length]),
+    outer,
+  ]).toString('hex'));
+  return outer;
 }
 
 function sendChirpStackDownlink(devEui, apiKey, fPort, payloadBuf) {
