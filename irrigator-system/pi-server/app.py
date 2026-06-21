@@ -461,6 +461,9 @@ def fm_get_sessions():
         s['feeds'] = rows_to_list(conn.execute(
             'SELECT * FROM fm_session_feeds WHERE session_id=? ORDER BY id', (s['id'],)
         ).fetchall())
+        loaded = s.get('total_loaded_kg') or 0
+        fedout = s.get('total_fed_out_kg') or 0
+        s['residual_kg'] = round(loaded - fedout, 1)
     conn.close()
     return jsonify(sessions)
 

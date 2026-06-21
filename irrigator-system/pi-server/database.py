@@ -100,8 +100,7 @@ def init_db():
             herd_name        TEXT,
             num_cows         INTEGER,
             total_loaded_kg  REAL,
-            total_fed_out_kg REAL,
-            residual_kg      REAL GENERATED ALWAYS AS (total_loaded_kg - total_fed_out_kg) VIRTUAL
+            total_fed_out_kg REAL
         );
 
         CREATE TABLE IF NOT EXISTS fm_session_feeds (
