@@ -2043,18 +2043,29 @@ async function fmLoadLog(){
 
 // ── Feed Inventory ────────────────────────────────────────────────────
 async function fmInvInit(){
-  // Populate ingredient selector
-  const ings = fmIngredients.length ? fmIngredients : (await api(FM+'/ingredients') || []);
-  if (!fmIngredients.length) fmIngredients = ings;
+  const ings = fmIngredients.length ? fmIngredients : (await api(FM+'/ingredients').catch(()=>null) || []);
+  if (ings.length && !fmIngredients.length) fmIngredients = ings;
   const sel = document.getElementById('finv-ing-sel');
-  sel.innerHTML = '<option value="">Select feed…</option>' +
-    ings.filter(i=>i.active).map(i=>`<option value="${i.id}">${_esc(i.name)}</option>`).join('');
+  const active = ings.filter(i=>i.active);
+  if (!active.length){
+    sel.innerHTML = '<option value="">— server unavailable —</option>';
+  } else {
+    sel.innerHTML = '<option value="">Select feed…</option>' +
+      active.map(i=>`<option value="${i.id}">${_esc(i.name)}</option>`).join('');
+  }
   await fmInvLoad();
 }
 
 async function fmInvLoad(){
-  const data = await api(FM+'/inventory');
-  if (!data) return;
+  let data;
+  try { data = await api(FM+'/inventory'); } catch(e){ data = null; }
+  if (!data || data.error){
+    document.getElementById('finv-stock-tbody').innerHTML =
+      '<tr><td colspan="5" style="color:var(--red);text-align:center;padding:1rem">Server error — deploy updated database.py and restart Flask.</td></tr>';
+    document.getElementById('finv-hist-tbody').innerHTML =
+      '<tr><td colspan="4" style="color:var(--red);text-align:center;padding:1rem">Server unavailable.</td></tr>';
+    return;
+  }
 
   // Stock summary
   const sTbody = document.getElementById('finv-stock-tbody');
@@ -2114,11 +2125,16 @@ async function fmInvAddDelivery(){
   const ingId = document.getElementById('finv-ing-sel').value;
   const kg    = parseFloat(document.getElementById('finv-kg').value);
   if (!ingId || !kg || kg <= 0){ alert('Select a feed and enter a positive kg amount.'); return; }
-  const r = await api(FM+'/inventory',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ingredient_id:+ingId, kg_delivered:kg})});
-  if (r && r.ok){
+  let r;
+  try {
+    r = await api(FM+'/inventory',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ingredient_id:+ingId, kg_delivered:kg})});
+  } catch(e){ r = null; }
+  if (r && !r.error){
     document.getElementById('finv-kg').value='';
     fmInvLoad();
+  } else {
+    alert('Failed to log delivery — check that the Pi server is running.\n'+(r&&r.error||''));
   }
 }
 
