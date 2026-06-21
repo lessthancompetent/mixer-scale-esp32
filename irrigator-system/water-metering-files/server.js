@@ -282,7 +282,31 @@ mqttClient.on('message', (_topic, message) => {
       return;
     }
 
-    // Feed mixer feed-log uplink (fPort=11, type byte 0x50)
+    // Feed mixer log v2 (fPort=11, type 0x51): date/herd/cows/loaded/fedout/dm-per-ing
+    if (fPort === 11 && buf.length >= 9 && buf[0] === 0x51) {
+      const herdIdx      = buf[1];
+      const numCows      = buf.readUInt16BE(2);
+      const totalLoaded  = buf.readUInt16BE(4) / 10.0;
+      const totalFedOut  = buf.readUInt16BE(6) / 10.0;
+      const numEntries   = buf[8];
+      const ings         = [];
+      for (let i = 0; i < numEntries && (9 + i * 2 + 1) < buf.length; i++) {
+        ings.push({ ingredient_idx: buf[9 + i * 2], dm_pct: buf[9 + i * 2 + 1] });
+      }
+      const logBody = JSON.stringify({ herd_idx: herdIdx, num_cows: numCows,
+        total_loaded_kg: totalLoaded, total_fed_out_kg: totalFedOut, ingredients: ings });
+      const logReq = require('http').request({
+        hostname: '127.0.0.1', port: 5000, path: '/feedmixer/logv2',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(logBody) },
+      }, res => res.resume());
+      logReq.on('error', err => console.error('[FEEDMIX→FLASK v2]', err.message));
+      logReq.write(logBody); logReq.end();
+      console.log(`[FEEDMIX ${deviceId}] herd=${herdIdx} cows=${numCows} loaded=${totalLoaded}kg fed=${totalFedOut}kg`);
+      broadcastSSE({ type: 'feedmix_log', deviceId, herdIdx, numCows, totalLoaded, totalFedOut, ings });
+      return;
+    }
+    // Feed mixer log v1 legacy (fPort=11, type 0x50) — kept for older firmware
     if (fPort === 11 && buf.length >= 5 && buf[0] === 0x50) {
       const herdId     = buf[1];
       const totalWetKg = buf.readUInt16BE(2) / 10.0;
@@ -290,11 +314,9 @@ mqttClient.on('message', (_topic, message) => {
       const steps      = [];
       for (let i = 0; i < numSteps && (5 + i * 5 + 4) < buf.length; i++) {
         const off = 5 + i * 5;
-        steps.push({
-          ingredient_idx: buf[off],
-          target_kg:      buf.readUInt16BE(off + 1) / 10.0,
-          loaded_kg:      buf.readUInt16BE(off + 3) / 10.0,
-        });
+        steps.push({ ingredient_idx: buf[off],
+          target_kg: buf.readUInt16BE(off + 1) / 10.0,
+          loaded_kg: buf.readUInt16BE(off + 3) / 10.0 });
       }
       const logBody = JSON.stringify({ herd_id: herdId, total_wet_kg: totalWetKg, steps });
       const logReq  = require('http').request({
@@ -304,7 +326,6 @@ mqttClient.on('message', (_topic, message) => {
       }, res => res.resume());
       logReq.on('error', err => console.error('[FEEDMIX→FLASK]', err.message));
       logReq.write(logBody); logReq.end();
-      console.log(`[FEEDMIX ${deviceId}] herd=${herdId} total=${totalWetKg}kg steps=${numSteps}`);
       broadcastSSE({ type: 'feedmix_log', deviceId, herdId, totalWetKg, steps });
       return;
     }

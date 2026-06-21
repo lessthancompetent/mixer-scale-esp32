@@ -93,6 +93,33 @@ def init_db():
             steps_json    TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS fm_feed_sessions (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            logged_at        TEXT NOT NULL DEFAULT (datetime('now')),
+            herd_idx         INTEGER,
+            herd_name        TEXT,
+            num_cows         INTEGER,
+            total_loaded_kg  REAL,
+            total_fed_out_kg REAL,
+            residual_kg      REAL GENERATED ALWAYS AS (total_loaded_kg - total_fed_out_kg) VIRTUAL
+        );
+
+        CREATE TABLE IF NOT EXISTS fm_session_feeds (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id     INTEGER NOT NULL REFERENCES fm_feed_sessions(id) ON DELETE CASCADE,
+            ingredient_idx INTEGER,
+            ingredient_name TEXT,
+            dm_pct         REAL
+        );
+
+        CREATE TABLE IF NOT EXISTS fm_inventory (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            received_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            ingredient_id   INTEGER REFERENCES fm_ingredients(id),
+            ingredient_name TEXT,
+            kg_delivered    REAL NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_pos_session   ON positions(session_id);
         CREATE INDEX IF NOT EXISTS idx_pos_timestamp ON positions(timestamp);
         CREATE INDEX IF NOT EXISTS idx_alerts_ack    ON alerts(acknowledged);

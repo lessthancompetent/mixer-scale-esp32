@@ -118,8 +118,10 @@ static uint8_t txLen = 0;
 
 static SemaphoreHandle_t dataMutex;
 
-volatile bool    wantSendLog = false;
-volatile uint8_t sendLogHerd = 0;
+volatile bool    wantSendLog  = false;
+volatile uint8_t sendLogHerd  = 0;
+float            feedoutStartKg = 0.0f;
+float            feedoutEndKg   = 0.0f;
 
 unsigned long lastOledMs = 0;
 int           encLast    = HIGH;
@@ -225,37 +227,38 @@ void scheduleTx(osjob_t *j) {
 
 void sendFeedLog(uint8_t hi) {
   if (!joined || txPending || hi >= numHerd || !herds[hi].valid) return;
-  Herd &h  = herds[hi];
+  Herd    &h    = herds[hi];
   uint16_t cows = cowOverride > 0 ? cowOverride : h.num_cows;
 
-  float totalWet = 0;
+  // Total loaded (sum of step weights, capped at target)
+  float totalLoaded = 0;
   for (uint8_t i = 0; i < h.num_entries; i++) {
     uint8_t iidx = h.entries[i].ing_idx;
-    float dm = (iidx < numIng && ingredients[iidx].valid) ? ingredients[iidx].dm_pct : 30.0f;
-    if (dm > 0) totalWet += (h.entries[i].kg_dm_per_cow * cows) / (dm / 100.0f);
+    float   dm   = (iidx < numIng && ingredients[iidx].valid) ? ingredients[iidx].dm_pct : 30.0f;
+    float   wet  = (dm > 0) ? (h.entries[i].kg_dm_per_cow * cows) / (dm / 100.0f) : 0;
+    totalLoaded += min(stepLoaded[i] > 0 ? stepLoaded[i] : wet, wet);
   }
+  float fedOut  = max(0.0f, feedoutStartKg - feedoutEndKg);
 
-  txBuf[0] = 0x50;
+  // Type 0x51: date/herd/cows/total/fed-out/dm-per-ingredient (no per-lane kg)
+  txBuf[0] = 0x51;
   txBuf[1] = h.idx;
-  uint16_t tw = (uint16_t)(totalWet * 10);
-  txBuf[2] = tw >> 8; txBuf[3] = tw & 0xFF;
-  txBuf[4] = h.num_entries;
-
-  for (uint8_t i = 0; i < h.num_entries; i++) {
+  uint16_t cv = cows;
+  txBuf[2] = cv >> 8;  txBuf[3] = cv & 0xFF;
+  uint16_t lv = (uint16_t)(totalLoaded * 10);
+  txBuf[4] = lv >> 8;  txBuf[5] = lv & 0xFF;
+  uint16_t fv = (uint16_t)(fedOut * 10);
+  txBuf[6] = fv >> 8;  txBuf[7] = fv & 0xFF;
+  txBuf[8] = h.num_entries;
+  for (uint8_t i = 0; i < h.num_entries && i < MAX_ENTRY; i++) {
     uint8_t iidx = h.entries[i].ing_idx;
-    float dm  = (iidx < numIng && ingredients[iidx].valid) ? ingredients[iidx].dm_pct : 30.0f;
-    float wet = (dm > 0) ? (h.entries[i].kg_dm_per_cow * cows) / (dm / 100.0f) : 0;
-    float loaded = min(stepLoaded[i], wet);
-    uint8_t off = 5 + i * 5;
-    uint16_t tv = (uint16_t)(wet    * 10);
-    uint16_t lv = (uint16_t)(loaded * 10);
-    txBuf[off]   = iidx;
-    txBuf[off+1] = tv >> 8; txBuf[off+2] = tv & 0xFF;
-    txBuf[off+3] = lv >> 8; txBuf[off+4] = lv & 0xFF;
+    float   dm   = (iidx < numIng && ingredients[iidx].valid) ? ingredients[iidx].dm_pct : 30.0f;
+    txBuf[9 + i * 2]     = iidx;
+    txBuf[9 + i * 2 + 1] = (uint8_t)round(dm);
   }
-  txLen = 5 + h.num_entries * 5;
+  txLen = 9 + h.num_entries * 2;
   snprintf(loraStatus, sizeof(loraStatus), "Sending log...");
-  Serial.printf("[UL] FeedLog herd[%d] total=%.1fkg\n", hi, totalWet);
+  Serial.printf("[UL] FeedLog herd[%d] loaded=%.1f fed=%.1f\n", hi, totalLoaded, fedOut);
   os_setCallback(&txjob, scheduleTx);
 }
 
@@ -453,8 +456,10 @@ void apiStepUndo() {
 }
 
 void apiComplete() {
-  sendLogHerd = numHerd > 0 ? activeHerdIdx % numHerd : 0;
-  wantSendLog = true;
+  feedoutStartKg = httpServer.hasArg("startKg") ? httpServer.arg("startKg").toFloat() : scaleKg;
+  feedoutEndKg   = httpServer.hasArg("endKg")   ? httpServer.arg("endKg").toFloat()   : scaleKg;
+  sendLogHerd    = numHerd > 0 ? activeHerdIdx % numHerd : 0;
+  wantSendLog    = true;
   memset(stepLoaded, 0, sizeof(stepLoaded));
   for (uint8_t i = 0; i < MAX_ENTRY; i++) stepTare[i] = -1;
   httpServer.send(200, "application/json", "{\"ok\":true}");
@@ -526,9 +531,11 @@ select{width:100%;padding:9px 8px;background:#101810;color:#dde8dd;border:1px so
 .lane-btns{display:flex;gap:8px;padding:0 16px}
 .lane-btn{flex:1;padding:12px 0;background:#101810;color:#4a664a;border:1px solid #253525;border-radius:8px;font-size:1.15rem;font-weight:700;cursor:pointer;touch-action:manipulation}
 .lane-btn.active{background:#1a4a1a;color:#aff5ae;border-color:#3a7a3a}
-.fo-per-lane-big{display:none;margin:0 0 12px;padding:10px 16px;background:#0d1e0d;border:1px solid #2a4a2a;border-radius:10px;justify-content:center;align-items:baseline;gap:6px}
-.fo-pl-val{font-size:2.6rem;font-weight:900;color:#6ecb6e;line-height:1}
-.fo-pl-unit{font-size:.9rem;color:#4a664a}
+.fo-per-lane-big{display:none;margin:0 0 12px;padding:12px 16px;background:#0d1e0d;border:1px solid #2a4a2a;border-radius:10px}
+.fo-lane-hdr{display:flex;justify-content:space-between;font-size:.68rem;margin-bottom:5px}
+.fo-lane-tag{color:#4a664a;text-transform:uppercase;letter-spacing:.07em}
+.fo-lane-rem{color:#aff5ae;font-weight:700;font-size:.8rem}
+.fo-lane-foot{text-align:center;font-size:.65rem;color:#4a664a;margin-top:4px}
 .fo-rows-lbl{font-size:.6rem;color:#4a664a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
 .fo-row{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #131f13;font-size:.9rem}
 .fo-name{color:#8ab88a}
@@ -600,8 +607,12 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
     </div>
   </div>
   <div class="fo-per-lane-big" id="fo-per-lane-big">
-    <span class="fo-pl-val" id="fo-pl-val">--</span>
-    <span class="fo-pl-unit">kg / lane</span>
+    <div class="fo-lane-hdr">
+      <span class="fo-lane-tag">Lane <span id="fo-lane-num">1</span></span>
+      <span id="fo-lane-rem" class="fo-lane-rem">-- kg</span>
+    </div>
+    <div class="bar-track" style="height:28px"><div class="bar-fill" id="fo-lane-bar" style="width:100%"></div></div>
+    <div class="fo-lane-foot" id="fo-lane-foot">-- kg per lane</div>
   </div>
   <div class="fo-rows-lbl">Loaded mix</div>
   <div id="fo-rows"></div>
@@ -614,20 +625,22 @@ footer{position:fixed;bottom:0;left:0;right:0;padding:10px 16px;background:#090f
 
 <div id="toast"></div>
 <script>
-var st={},inFeedout=false,lanes=1,herdChosen=false,prevKg=null,prevKgTs=0;
+var st={},inFeedout=false,lanes=1,herdChosen=false,prevKg=null,prevKgTs=0,laneStart=null,currentLane=1,totLoaded=0;
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.style.opacity=1;setTimeout(function(){e.style.opacity=0},2600)}
-function setLanes(n){lanes=n;render(st)}
+function setLanes(n){lanes=n;currentLane=1;laneStart=st.scaleValid?st.scaleKg:null;render(st)}
 function pickHerd(i){herdChosen=true;inFeedout=false;fetch('/api/herd?idx='+i+'&fresh=1').then(poll)}
 function setHerd(i){fetch('/api/herd?idx='+i).then(poll)}
 function setCows(n){if(+n>0)fetch('/api/cows?n='+n).then(poll)}
 function adjCows(d){var el=document.getElementById('cow-n');var v=Math.max(1,(+el.value||0)+d);el.value=v;setCows(v)}
 function undo(i){fetch('/api/step-undo?step='+i).then(poll)}
 function tare(i){fetch('/api/tare?step='+i).then(poll)}
-function goFeedout(){inFeedout=true;render(st)}
+function goFeedout(){inFeedout=true;currentLane=1;laneStart=st.scaleValid?st.scaleKg:null;render(st)}
 function goLoad(){inFeedout=false;render(st)}
 function finish(){
-  fetch('/api/complete',{method:'POST'}).then(function(){
-    toast('Feed log sent ✓');inFeedout=false;herdChosen=false;poll();
+  var sk=laneStart!==null?laneStart.toFixed(0):(st.scaleValid?st.scaleKg.toFixed(0):'0');
+  var ek=st.scaleValid?st.scaleKg.toFixed(0):'0';
+  fetch('/api/complete?startKg='+sk+'&endKg='+ek,{method:'POST'}).then(function(){
+    toast('Feed log sent ✓');inFeedout=false;herdChosen=false;laneStart=null;currentLane=1;poll();
   });
 }
 function show(id){['pick','load','fo'].forEach(function(x){document.getElementById(x).style.display=x===id?'block':'none';})}
@@ -664,20 +677,35 @@ function render(s){
   var ovPct=totT>0?Math.min(100,Math.round(totL/totT*100)):0;
   if(inFeedout){
     show('fo');
+    totLoaded=totL;
     document.getElementById('fo-sub').textContent=s.herd.name+' • '+s.herd.num_cows+' cows • '+s.herd.meals_per_day+'x/day';
+    // On-wagon box shows total LOADED (fixed), not live scale
     var wkg=document.getElementById('fo-wagon-kg');
-    if(s.scaleValid){wkg.textContent=s.scaleKg.toFixed(0)+' kg';wkg.className='fo-wagon-kg';}
-    else{wkg.textContent='-- kg';wkg.className='fo-wagon-kg off';}
+    wkg.textContent=totL.toFixed(0)+' kg';wkg.className='fo-wagon-kg';
     document.querySelectorAll('.lane-btn').forEach(function(b,i){b.className='lane-btn'+(i+1===lanes?' active':'');});
+    // Lane bar
+    var perLane=lanes>0?totL/lanes:totL;
+    if(laneStart===null&&s.scaleValid)laneStart=s.scaleKg;
+    var fedInLane=s.scaleValid&&laneStart!==null?Math.max(0,laneStart-s.scaleKg):0;
+    var remaining=Math.max(0,perLane-fedInLane);
+    var barPct=perLane>0?Math.max(0,100-fedInLane/perLane*100):100;
+    // Auto-advance lane when 98% fed out
+    if(s.scaleValid&&laneStart!==null&&fedInLane>=perLane*0.98&&currentLane<lanes){
+      currentLane++;laneStart=s.scaleKg;
+      toast('Lane '+(currentLane-1)+' ✓ → Lane '+currentLane);
+    }
     var plBig=document.getElementById('fo-per-lane-big');
-    if(lanes>1){plBig.style.display='flex';document.getElementById('fo-pl-val').textContent=(totL/lanes).toFixed(1);}
-    else plBig.style.display='none';
+    plBig.style.display='block';
+    document.getElementById('fo-lane-num').textContent=currentLane+' / '+lanes;
+    document.getElementById('fo-lane-rem').textContent=remaining.toFixed(0)+' kg';
+    var bar=document.getElementById('fo-lane-bar');
+    bar.style.width=barPct.toFixed(0)+'%';
+    bar.className='bar-fill'+(barPct<15?' over':'');
+    document.getElementById('fo-lane-foot').textContent=perLane.toFixed(0)+' kg per lane';
     document.getElementById('fo-rows').innerHTML=ents.map(function(e){
-      var chk=e.done?'<span style="color:#4ecb4e"> &#10003;</span>':'';
-      var pl=lanes>1?'<span class="fo-lane">'+((e.loaded_kg||0)/lanes).toFixed(1)+'/lane</span>':'';
-      return'<div class="fo-row"><span class="fo-name">'+e.name+chk+'</span><span class="fo-kg">'+(e.loaded_kg||0).toFixed(1)+' kg'+pl+'</span></div>';
+      return'<div class="fo-row"><span class="fo-name">'+e.name+'</span><span class="fo-kg">'+((e.loaded_kg||0)/lanes).toFixed(1)+' kg<span class="fo-lane"> /lane</span></span></div>';
     }).join('');
-    document.getElementById('fo-total').textContent=totL.toFixed(1)+' kg';
+    document.getElementById('fo-total').textContent=totL.toFixed(1)+' kg loaded';
     return;
   }
   show('load');

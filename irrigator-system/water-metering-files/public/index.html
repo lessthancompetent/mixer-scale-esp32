@@ -451,6 +451,7 @@
     <button class="tab-btn" onclick="switchTab('water')">Water Meters</button>
     <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
     <button class="tab-btn" onclick="switchTab('feedmixer')">Feed Mixer</button>
+    <button class="tab-btn" onclick="switchTab('feedinv')">Feed Inventory</button>
     <button class="tab-btn" onclick="switchTab('devsettings')">Device Settings</button>
   </nav>
 
@@ -712,16 +713,64 @@
           <table>
             <thead>
               <tr>
-                <th>Date / Time</th><th>Herd</th><th>Total kg</th><th>Steps</th>
+                <th>Date</th><th>Herd</th><th>Cows</th><th>Loaded</th><th>Fed Out</th><th>Residual</th><th>Feeds (DM%)</th>
               </tr>
             </thead>
             <tbody id="fm-log-tbody">
-              <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+              <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div><!-- #tab-feedmixer -->
+
+    <!-- ── Feed Inventory Tab ── -->
+    <div id="tab-feedinv" class="tab-panel">
+      <div class="fm-section">
+        <h3>Log Delivery</h3>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:3px">Feed</label>
+            <select id="finv-ing-sel" class="fm-input" style="min-width:160px">
+              <option value="">Select feed…</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:3px">kg delivered</label>
+            <input type="number" id="finv-kg" class="fm-input" placeholder="0" min="0" step="100" style="width:110px">
+          </div>
+          <button class="btn-sm" style="background:var(--accent);color:#fff;margin-bottom:1px" onclick="fmInvAddDelivery()">+ Log</button>
+        </div>
+      </div>
+
+      <div class="fm-section" style="margin-top:1rem">
+        <h3>Stock Summary</h3>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead>
+              <tr><th>Feed</th><th>DM%</th><th>Delivered (kg)</th><th>Consumed (kg)</th><th>Stock (kg)</th></tr>
+            </thead>
+            <tbody id="finv-stock-tbody">
+              <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="fm-section" style="margin-top:1rem">
+        <h3>Delivery History</h3>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Feed</th><th>kg</th><th></th></tr>
+            </thead>
+            <tbody id="finv-hist-tbody">
+              <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- #tab-feedinv -->
 
     <!-- ── Ingredient Library Modal ── -->
     <div class="ing-modal-overlay" id="fm-ing-modal">
@@ -1306,7 +1355,7 @@ let activeTab='vat';
 function switchTab(tab){
   if (tab==='devsettings' && !isDevAuthed()){
     activeTab=tab;
-    const tabs=['vat','water','irrigator','feedmixer','devsettings'];
+    const tabs=['vat','water','irrigator','feedmixer','feedinv','devsettings'];
     document.querySelectorAll('.tab-btn').forEach((b,i)=>{
       b.classList.toggle('active', tabs[i]===tab);
     });
@@ -1319,7 +1368,7 @@ function switchTab(tab){
     return;
   }
   activeTab=tab;
-  const tabs=['vat','water','irrigator','feedmixer','devsettings'];
+  const tabs=['vat','water','irrigator','feedmixer','feedinv','devsettings'];
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
     b.classList.toggle('active', tabs[i]===tab);
   });
@@ -1329,6 +1378,7 @@ function switchTab(tab){
   if (tab==='water')       refreshWater();
   if (tab==='irrigator')   irrInit();
   if (tab==='feedmixer')   fmInit();
+  if (tab==='feedinv')     fmInvInit();
   if (tab==='devsettings') devInit();
 }
 
@@ -1353,7 +1403,10 @@ function startSSE(){
   es.onmessage=e=>{
     const d=JSON.parse(e.data);
     if (d.type==='water'){if (activeTab==='water') refreshWater();}
-    else if (d.type==='feedmix_log'){if (activeTab==='feedmixer') fmLoadLog();}
+    else if (d.type==='feedmix_log'){
+      if (activeTab==='feedmixer') fmLoadLog();
+      else if (activeTab==='feedinv') fmInvLoad();
+    }
     else {if (activeTab==='vat') refreshAll();}
   };
   es.onerror=()=>setTimeout(startSSE,5000);
@@ -1962,39 +2015,117 @@ async function fmPushDevice(herdIds){
 
 // ── Feed Log ─────────────────────────────────────────────────────────
 async function fmLoadLog(){
-  const log  = await api(FM+'/log');
+  const log  = await api(FM+'/logv2');
   const tbody= document.getElementById('fm-log-tbody');
   if (!log || !log.length){
-    tbody.innerHTML='<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">No feed sessions yet.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">No feed sessions yet.</td></tr>';
     return;
   }
   tbody.innerHTML = log.map(row => {
-    const stepsHtml = (row.steps && row.steps.length)
-      ? row.steps.map(s => {
-          const loaded = +(s.loaded_kg ?? s.actual_kg ?? 0);
-          const target = +(s.target_kg ?? 0);
-          const pct    = target > 0 ? Math.min(100, loaded / target * 100) : 0;
-          const ing    = fmIngredients[s.ingredient_idx ?? s.step_index];
-          const name   = s.ingredient_name || (ing ? ing.name : `Lane ${(s.ingredient_idx ?? s.step_index ?? '?')}`);
-          return `<div style="margin-bottom:5px">
-            <div style="font-size:0.72rem;color:var(--muted);margin-bottom:2px">${_esc(name)}</div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <div style="flex:1;min-width:60px;height:10px;background:var(--border);border-radius:5px;overflow:hidden">
-                <div style="height:100%;background:var(--accent);width:${pct.toFixed(1)}%;border-radius:5px"></div>
-              </div>
-              <span style="font-size:0.72rem;white-space:nowrap;color:var(--text)">${loaded.toFixed(0)} / ${target.toFixed(0)} kg</span>
-            </div>
-          </div>`;
-        }).join('')
+    const feedsHtml = (row.feeds && row.feeds.length)
+      ? row.feeds.map(f =>
+          `<span style="display:inline-block;margin:1px 3px 1px 0;padding:1px 5px;background:var(--border);border-radius:4px;font-size:0.72rem">${_esc(f.ingredient_name||'?')} <b>${f.dm_pct??'—'}%</b></span>`
+        ).join('')
       : '<span style="color:var(--muted);font-size:0.75rem">—</span>';
-    const totalKg = row.total_wet_kg ?? row.total_kg;
+    const residual = row.residual_kg != null ? (+row.residual_kg) : null;
+    const residStyle = residual != null && residual > 20 ? 'color:var(--orange)' : 'color:var(--muted)';
     return `<tr>
-      <td>${_esc(String(row.logged_at||row.created_at||'').slice(0,16).replace('T',' '))}</td>
+      <td style="white-space:nowrap">${_esc(String(row.logged_at||'').slice(0,16).replace('T',' '))}</td>
       <td>${_esc(row.herd_name||'—')}</td>
-      <td>${totalKg != null ? (+totalKg).toFixed(0)+' kg' : '—'}</td>
-      <td>${stepsHtml}</td>
+      <td>${row.num_cows != null ? row.num_cows : '—'}</td>
+      <td>${row.total_loaded_kg != null ? (+row.total_loaded_kg).toFixed(0)+' kg' : '—'}</td>
+      <td>${row.total_fed_out_kg != null ? (+row.total_fed_out_kg).toFixed(0)+' kg' : '—'}</td>
+      <td style="${residStyle}">${residual != null ? residual.toFixed(0)+' kg' : '—'}</td>
+      <td>${feedsHtml}</td>
     </tr>`;
   }).join('');
+}
+
+// ── Feed Inventory ────────────────────────────────────────────────────
+async function fmInvInit(){
+  // Populate ingredient selector
+  const ings = fmIngredients.length ? fmIngredients : (await api(FM+'/ingredients') || []);
+  if (!fmIngredients.length) fmIngredients = ings;
+  const sel = document.getElementById('finv-ing-sel');
+  sel.innerHTML = '<option value="">Select feed…</option>' +
+    ings.filter(i=>i.active).map(i=>`<option value="${i.id}">${_esc(i.name)}</option>`).join('');
+  await fmInvLoad();
+}
+
+async function fmInvLoad(){
+  const data = await api(FM+'/inventory');
+  if (!data) return;
+
+  // Stock summary
+  const sTbody = document.getElementById('finv-stock-tbody');
+  if (!data.stock || !data.stock.length){
+    sTbody.innerHTML='<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1rem">No data.</td></tr>';
+  } else {
+    // Build consumption map from deliveries difference (server computes total_delivered)
+    // We need consumed = total_delivered - stock_remaining. But server doesn't compute consumed yet.
+    // Use sessions: approximate per-ingredient consumption from sessions
+    const sessions = await api(FM+'/logv2?limit=500') || [];
+    const consumed = {};
+    for (const s of sessions) {
+      if (!s.feeds || !s.total_fed_out_kg) continue;
+      // Distribute fed_out proportionally across feeds by their wet weight (DM% used as proxy)
+      // Simple approach: split equally across active feeds if we lack wet weights
+      const n = s.feeds.length;
+      if (!n) continue;
+      const shareKg = (+s.total_fed_out_kg) / n;
+      for (const f of s.feeds) {
+        const iid = f.ingredient_idx;
+        if (iid == null) continue;
+        // Find ingredient id from fmIngredients by idx (idx = position in list, id = db id)
+        // The ingredient_idx in feed sessions corresponds to the ingredient's id
+        consumed[iid] = (consumed[iid] || 0) + shareKg;
+      }
+    }
+    sTbody.innerHTML = data.stock.map(r => {
+      const del  = +(r.total_delivered || 0);
+      const con  = +(consumed[r.id] || 0);
+      const stk  = del - con;
+      const stkStyle = stk < 0 ? 'color:var(--red)' : stk < 500 ? 'color:var(--orange)' : 'color:var(--green)';
+      return `<tr>
+        <td>${_esc(r.name)}</td>
+        <td>${r.dm_pct??'—'}%</td>
+        <td>${del.toFixed(0)}</td>
+        <td>${con.toFixed(0)}</td>
+        <td style="${stkStyle};font-weight:600">${stk.toFixed(0)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Delivery history
+  const hTbody = document.getElementById('finv-hist-tbody');
+  if (!data.deliveries || !data.deliveries.length){
+    hTbody.innerHTML='<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1rem">No deliveries logged.</td></tr>';
+  } else {
+    hTbody.innerHTML = data.deliveries.map(d=>`<tr>
+      <td style="white-space:nowrap">${_esc(String(d.received_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${_esc(d.ingredient_name||'—')}</td>
+      <td>${(+d.kg_delivered).toFixed(0)} kg</td>
+      <td><button class="btn-sm btn-danger" onclick="fmInvDelete(${d.id})">Del</button></td>
+    </tr>`).join('');
+  }
+}
+
+async function fmInvAddDelivery(){
+  const ingId = document.getElementById('finv-ing-sel').value;
+  const kg    = parseFloat(document.getElementById('finv-kg').value);
+  if (!ingId || !kg || kg <= 0){ alert('Select a feed and enter a positive kg amount.'); return; }
+  const r = await api(FM+'/inventory',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ingredient_id:+ingId, kg_delivered:kg})});
+  if (r && r.ok){
+    document.getElementById('finv-kg').value='';
+    fmInvLoad();
+  }
+}
+
+async function fmInvDelete(id){
+  if (!confirm('Delete this delivery entry?')) return;
+  await api(FM+'/inventory/'+id,{method:'DELETE'});
+  fmInvLoad();
 }
 
 // ── Utility ───────────────────────────────────────────────────────────

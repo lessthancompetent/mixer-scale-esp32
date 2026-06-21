@@ -448,6 +448,102 @@ def fm_add_log():
     return jsonify({'ok': True}), 201
 
 
+# ── Feed sessions (v2 log) ────────────────────────────────────────────────────
+
+@app.get('/feedmixer/logv2')
+def fm_get_sessions():
+    limit = min(int(request.args.get('limit', 100)), 500)
+    conn  = get_conn()
+    sessions = rows_to_list(conn.execute(
+        'SELECT * FROM fm_feed_sessions ORDER BY logged_at DESC LIMIT ?', (limit,)
+    ).fetchall())
+    for s in sessions:
+        s['feeds'] = rows_to_list(conn.execute(
+            'SELECT * FROM fm_session_feeds WHERE session_id=? ORDER BY id', (s['id'],)
+        ).fetchall())
+    conn.close()
+    return jsonify(sessions)
+
+
+@app.post('/feedmixer/logv2')
+def fm_add_session():
+    data  = request.get_json(force=True, silent=True) or {}
+    conn  = get_conn()
+    # Resolve herd name from herds table if not supplied
+    herd_name = data.get('herd_name', '')
+    if not herd_name:
+        row = conn.execute('SELECT name FROM fm_herds WHERE id=?', (data.get('herd_idx'),)).fetchone()
+        if row: herd_name = row['name']
+    cur = conn.execute(
+        '''INSERT INTO fm_feed_sessions (herd_idx, herd_name, num_cows, total_loaded_kg, total_fed_out_kg)
+           VALUES (?,?,?,?,?)''',
+        (data.get('herd_idx'), herd_name, data.get('num_cows', 0),
+         data.get('total_loaded_kg', 0), data.get('total_fed_out_kg', 0))
+    )
+    sid = cur.lastrowid
+    for ing in (data.get('ingredients') or []):
+        irow = conn.execute('SELECT name FROM fm_ingredients WHERE id=?',
+                            (ing.get('ingredient_idx'),)).fetchone()
+        iname = irow['name'] if irow else f"Ing {ing.get('ingredient_idx','?')}"
+        conn.execute(
+            'INSERT INTO fm_session_feeds (session_id, ingredient_idx, ingredient_name, dm_pct) VALUES (?,?,?,?)',
+            (sid, ing.get('ingredient_idx'), iname, ing.get('dm_pct', 0))
+        )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'id': sid}), 201
+
+
+# ── Feed inventory ─────────────────────────────────────────────────────────────
+
+@app.get('/feedmixer/inventory')
+def fm_get_inventory():
+    conn  = get_conn()
+    # Deliveries
+    deliveries = rows_to_list(conn.execute(
+        'SELECT * FROM fm_inventory ORDER BY received_at DESC LIMIT 500'
+    ).fetchall())
+    # Per-ingredient stock: deliveries minus estimated consumption
+    # Consumption estimated from sessions: fed_out × (ingredient wet proportion)
+    stock_rows = rows_to_list(conn.execute('''
+        SELECT i.id, i.name, i.dm_pct,
+               COALESCE(SUM(inv.kg_delivered),0) AS total_delivered
+        FROM fm_ingredients i
+        LEFT JOIN fm_inventory inv ON inv.ingredient_id = i.id
+        GROUP BY i.id
+    ''').fetchall())
+    conn.close()
+    return jsonify({'deliveries': deliveries, 'stock': stock_rows})
+
+
+@app.post('/feedmixer/inventory')
+def fm_add_delivery():
+    data = request.get_json(force=True, silent=True) or {}
+    ing_id = data.get('ingredient_id')
+    kg     = float(data.get('kg_delivered', 0))
+    if not ing_id or kg <= 0:
+        abort(400)
+    conn  = get_conn()
+    row   = conn.execute('SELECT name FROM fm_ingredients WHERE id=?', (ing_id,)).fetchone()
+    iname = row['name'] if row else ''
+    conn.execute(
+        'INSERT INTO fm_inventory (ingredient_id, ingredient_name, kg_delivered) VALUES (?,?,?)',
+        (ing_id, iname, kg)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True}), 201
+
+
+@app.delete('/feedmixer/inventory/<int:did>')
+def fm_delete_delivery(did):
+    conn = get_conn()
+    conn.execute('DELETE FROM fm_inventory WHERE id=?', (did,))
+    conn.commit()
+    conn.close()
+    return jsonify({'deleted': did})
+
+
 # ── Root ──────────────────────────────────────────────────────────────────────
 
 @app.get('/')
