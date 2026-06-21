@@ -1353,6 +1353,7 @@ function startSSE(){
   es.onmessage=e=>{
     const d=JSON.parse(e.data);
     if (d.type==='water'){if (activeTab==='water') refreshWater();}
+    else if (d.type==='feedmix_log'){if (activeTab==='feedmixer') fmLoadLog();}
     else {if (activeTab==='vat') refreshAll();}
   };
   es.onerror=()=>setTimeout(startSSE,5000);
@@ -1969,12 +1970,28 @@ async function fmLoadLog(){
   }
   tbody.innerHTML = log.map(row => {
     const stepsHtml = (row.steps && row.steps.length)
-      ? row.steps.map(s=>`<div style="font-size:0.75rem;color:var(--muted)">${_esc(String(s.step_index??''))}: ${_esc(String(s.ingredient_name??''))} — ${s.actual_kg??'—'} kg</div>`).join('')
+      ? row.steps.map(s => {
+          const loaded = +(s.loaded_kg ?? s.actual_kg ?? 0);
+          const target = +(s.target_kg ?? 0);
+          const pct    = target > 0 ? Math.min(100, loaded / target * 100) : 0;
+          const ing    = fmIngredients[s.ingredient_idx ?? s.step_index];
+          const name   = s.ingredient_name || (ing ? ing.name : `Lane ${(s.ingredient_idx ?? s.step_index ?? '?')}`);
+          return `<div style="margin-bottom:5px">
+            <div style="font-size:0.72rem;color:var(--muted);margin-bottom:2px">${_esc(name)}</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="flex:1;min-width:60px;height:10px;background:var(--border);border-radius:5px;overflow:hidden">
+                <div style="height:100%;background:var(--accent);width:${pct.toFixed(1)}%;border-radius:5px"></div>
+              </div>
+              <span style="font-size:0.72rem;white-space:nowrap;color:var(--text)">${loaded.toFixed(0)} / ${target.toFixed(0)} kg</span>
+            </div>
+          </div>`;
+        }).join('')
       : '<span style="color:var(--muted);font-size:0.75rem">—</span>';
+    const totalKg = row.total_wet_kg ?? row.total_kg;
     return `<tr>
-      <td>${_esc(String(row.created_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${_esc(String(row.logged_at||row.created_at||'').slice(0,16).replace('T',' '))}</td>
       <td>${_esc(row.herd_name||'—')}</td>
-      <td>${row.total_kg != null ? row.total_kg : '—'}</td>
+      <td>${totalKg != null ? (+totalKg).toFixed(0)+' kg' : '—'}</td>
       <td>${stepsHtml}</td>
     </tr>`;
   }).join('');
