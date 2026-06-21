@@ -114,7 +114,7 @@ static osjob_t heartbeatJob;
 static uint8_t txBuf[64];
 static uint8_t txLen = 0;
 
-#define HEARTBEAT_MIN 5
+#define HEARTBEAT_MIN 1
 
 static SemaphoreHandle_t dataMutex;
 
