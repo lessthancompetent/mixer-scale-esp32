@@ -11,21 +11,29 @@
  *  Anemometer          → GPIO 35  (10 kΩ external pullup to 3.3 V, input-only pin)
  *  Wind vane wiper     → GPIO 36  (VP, ADC; 10 kΩ series resistor to 3.3 V)
  *
- * Uplink packet (fPort=12, type 0x60) — 10 bytes
+ * Sensors: DS18B20 temperature · tipping-bucket rain gauge
+ *          reed-switch anemometer · resistive wind vane
+ *          BME280 atmospheric pressure (I2C, SDA=21 SCL=22)
+ *
+ * Uplink packet (fPort=12, type 0x60) — 12 bytes
  * ────────────────────────────────────────────────
- *  [0]   0x60           type marker
- *  [1-2] int16 BE       temperature × 100  (e.g. 2150 = 21.50 °C)
- *  [3-4] uint16 BE      rain tips since last uplink (reset after TX)
- *  [5-6] uint16 BE      wind speed × 10 km/h
- *  [7-8] uint16 BE      wind direction degrees (0–359, 0=N)
- *  [9]   uint8          battery %
+ *  [0]    0x60           type marker
+ *  [1-2]  int16 BE       temperature × 100  (e.g. 2150 = 21.50 °C)
+ *  [3-4]  uint16 BE      rain tips since last uplink (reset after TX)
+ *  [5-6]  uint16 BE      wind speed × 10 km/h
+ *  [7-8]  uint16 BE      wind direction degrees (0–359, 0=N)
+ *  [9]    uint8          battery %
+ *  [10-11] uint16 BE     pressure × 10 hPa (e.g. 10132 = 1013.2 hPa; 0 = no sensor)
  */
 
 #include <lmic.h>
 #include <hal/hal.h>
 #include <SPI.h>
+#include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 
 // ── LoRaWAN credentials — fill in from ChirpStack ─────────────────────────
 // DevEUI and AppEUI: LSB first.  AppKey: MSB first.
@@ -50,6 +58,8 @@ const lmic_pinmap lmic_pins = {
 #define PIN_RAIN      34   // input-only, needs external 10 kΩ pullup to 3.3 V
 #define PIN_WIND_SPD  35   // input-only, needs external 10 kΩ pullup to 3.3 V
 #define PIN_WIND_DIR  36   // VP pin, ADC1_CH0
+#define PIN_SDA       21
+#define PIN_SCL       22
 
 // ── Config ─────────────────────────────────────────────────────────────────
 #define TX_INTERVAL_S     600   // Uplink period (10 min)
@@ -63,6 +73,8 @@ const lmic_pinmap lmic_pins = {
 // ── Sensors ────────────────────────────────────────────────────────────────
 OneWire          ow(PIN_ONEWIRE);
 DallasTemperature ds(&ow);
+Adafruit_BME280  bme;
+bool             bmeOk = false;
 
 // ── Wind vane lookup (16-position, 10 kΩ series pullup to 3.3 V) ──────────
 // Sorted by ADC value ascending.  Nearest match wins.
@@ -113,7 +125,7 @@ void IRAM_ATTR onWindPulse() {
 
 // ── LMIC jobs ──────────────────────────────────────────────────────────────
 static osjob_t txjob;
-static uint8_t txBuf[10];
+static uint8_t txBuf[12];
 bool joined = false, txPending = false;
 
 void scheduleTx(osjob_t* j) {
@@ -157,8 +169,13 @@ void buildAndSend(osjob_t* j) {
     txBuf[7] = dirRaw  >> 8;  txBuf[8] = dirRaw  & 0xFF;
     txBuf[9] = 100; // battery % — extend with ADC read if you add a divider
 
-    Serial.printf("[WX] %.1f°C  rain=%u tips  wind=%.1f km/h  dir=%d°\n",
-                  tempC, (unsigned)tips, windKmh, dir);
+    float pressHpa = bmeOk ? bme.readPressure() / 100.0f : 0.0f;
+    uint16_t pressRaw = (uint16_t)(pressHpa * 10.0f);
+    txBuf[10] = pressRaw >> 8;
+    txBuf[11] = pressRaw & 0xFF;
+
+    Serial.printf("[WX] %.1f°C  rain=%u tips  wind=%.1f km/h  dir=%d°  pressure=%.1f hPa\n",
+                  tempC, (unsigned)tips, windKmh, dir, pressHpa);
 
     os_setCallback(j, scheduleTx);
 }
@@ -203,6 +220,12 @@ void setup() {
 
     ds.begin();
     ds.setResolution(12);
+
+    Wire.begin(PIN_SDA, PIN_SCL);
+    bmeOk = bme.begin(0x76);
+    if (!bmeOk) bmeOk = bme.begin(0x77);
+    if (bmeOk) Serial.println("BME280 OK");
+    else        Serial.println("BME280 not found — pressure will be 0");
 
     os_init();
     LMIC_reset();

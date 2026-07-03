@@ -379,6 +379,15 @@
     .btn-warning { background: var(--orange); color: #fff; }
     .btn-muted { background: var(--border); color: var(--text); }
 
+    /* ── Weather period selector ── */
+    .wx-period-btn {
+      background: var(--border); border: none; color: var(--muted);
+      padding: 0.35rem 0.85rem; border-radius: 20px; cursor: pointer;
+      font-size: 0.82rem; font-weight: 500; transition: all 0.15s;
+    }
+    .wx-period-btn.active { background: var(--accent); color: #fff; }
+    .wx-period-btn:hover:not(.active) { color: var(--text); }
+
     /* ── Ingredient modal ── */
     .ing-modal-overlay {
       display: none; position: fixed; inset: 0;
@@ -840,29 +849,42 @@
             </svg>
           </div>
         </div>
-      </div>
-
-      <!-- 7-day summary -->
-      <div class="fm-section">
-        <h3>7-Day Summary</h3>
-        <div class="table-wrap" style="margin-bottom:0">
-          <table>
-            <thead><tr><th>Date</th><th>Rain (mm)</th><th>Avg Temp</th><th>Max Wind</th></tr></thead>
-            <tbody id="wx-daily-tbody">
-              <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
-            </tbody>
-          </table>
+        <div class="card">
+          <div class="card-label">Pressure</div>
+          <div class="card-value" id="wx-pressure">—</div>
+          <div class="card-sub" id="wx-pressure-sub"></div>
         </div>
       </div>
 
+      <!-- Period selector -->
+      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap">
+        <button class="wx-period-btn active" data-period="24h" onclick="wxSetPeriod('24h')">24 hours</button>
+        <button class="wx-period-btn" data-period="7d"  onclick="wxSetPeriod('7d')">7 days</button>
+        <button class="wx-period-btn" data-period="30d" onclick="wxSetPeriod('30d')">30 days</button>
+      </div>
+
+      <!-- Charts -->
+      <div class="fm-section">
+        <h3>Rainfall (mm)</h3>
+        <div id="wx-chart-rain"></div>
+      </div>
+      <div class="fm-section">
+        <h3>Temperature (°C)</h3>
+        <div id="wx-chart-temp"></div>
+      </div>
+      <div class="fm-section">
+        <h3>Pressure (hPa)</h3>
+        <div id="wx-chart-pressure"></div>
+      </div>
+
       <!-- Recent readings -->
-      <div class="fm-section" style="margin-top:1rem">
+      <div class="fm-section">
         <h3>Recent Readings</h3>
         <div class="table-wrap" style="margin-bottom:0">
           <table>
-            <thead><tr><th>Time</th><th>Temp</th><th>Rain tips</th><th>Wind km/h</th><th>Direction</th><th>Bat%</th></tr></thead>
+            <thead><tr><th>Time</th><th>Temp</th><th>Rain tips</th><th>Wind km/h</th><th>Direction</th><th>Pressure</th><th>Bat%</th></tr></thead>
             <tbody id="wx-readings-tbody">
-              <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+              <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -2219,10 +2241,160 @@ async function fmInvDelete(id){
 // ── Weather ───────────────────────────────────────────────────────────
 const WX = '/weather-api';
 const DIR_LABELS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+let wxPeriod = '24h';
 
 function wxDirLabel(deg){
   if (deg == null) return '—';
   return DIR_LABELS[Math.round(deg / 22.5) % 16];
+}
+
+function wxSetPeriod(p){
+  wxPeriod = p;
+  document.querySelectorAll('.wx-period-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.period === p));
+  wxLoadCharts();
+}
+
+// ── SVG chart helpers ─────────────────────────────────────────────────
+const _WC = {W:500,H:175,L:44,R:12,T:10,B:38};
+
+function _wxNiceStep(maxVal, n){
+  if(maxVal<=0) return 1;
+  const rough=maxVal/n;
+  const mag=Math.pow(10,Math.floor(Math.log10(rough)));
+  const norm=rough/mag;
+  return (norm<1.5?1:norm<3.5?2:norm<7.5?5:10)*mag;
+}
+
+function _wxNiceMax(v){
+  if(v<=0) return 1;
+  const s=_wxNiceStep(v,4);
+  return Math.ceil(v/s)*s;
+}
+
+function _wxFmtLabel(s,n,i){
+  const step=Math.max(1,Math.ceil(n/7));
+  if(i%step!==0) return '';
+  if(!s) return '';
+  if(s.includes(' ')) return s.slice(11,16);       // "14:00"
+  const [,m,d]=s.split('-');
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+parseInt(d);
+}
+
+let _wxTip=null;
+function _wxTipGet(){
+  if(!_wxTip){
+    _wxTip=document.createElement('div');
+    _wxTip.style.cssText='position:fixed;display:none;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.65rem;font-size:0.8rem;font-weight:500;pointer-events:none;z-index:9999;white-space:nowrap;color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,0.4)';
+    document.body.appendChild(_wxTip);
+  }
+  return _wxTip;
+}
+function wxTipMove(e){
+  const t=e.target;
+  if(t.dataset&&t.dataset.tip){
+    const tip=_wxTipGet();
+    tip.textContent=t.dataset.tip;
+    tip.style.display='';
+    tip.style.left=(e.clientX+12)+'px';
+    tip.style.top=(e.clientY-34)+'px';
+  } else wxTipHide();
+}
+function wxTipHide(){ if(_wxTip) _wxTip.style.display='none'; }
+
+function wxBarChart(id, data, color, unit){
+  const el=document.getElementById(id);
+  if(!data||!data.length){
+    el.innerHTML='<p style="color:var(--muted);text-align:center;padding:1.5rem 0">No data for this period</p>';
+    return;
+  }
+  const {W,H,L,R,T,B}=_WC;
+  const pw=W-L-R, ph=H-T-B;
+  const vals=data.map(d=>d.v??0);
+  const yMax=_wxNiceMax(Math.max(...vals,0.1));
+  const n=data.length;
+  const slot=pw/n;
+  let g='';
+  for(let i=0;i<=4;i++){
+    const v=yMax*i/4;
+    const y=(T+ph-ph*i/4).toFixed(1);
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    const lv=v%1===0?v.toFixed(0):v.toFixed(1);
+    g+=`<text x="${L-3}" y="${(+y+4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="9">${lv}</text>`;
+  }
+  data.forEach((d,i)=>{
+    const v=d.v??0;
+    const bPad=Math.max(slot*0.12,1);
+    const bw=(slot-bPad*2).toFixed(1);
+    const x=(L+i*slot+bPad).toFixed(1);
+    const bh=Math.max(ph*(v/yMax),1).toFixed(1);
+    const by=(T+ph-ph*(v/yMax)).toFixed(1);
+    g+=`<rect class="wx-bar" x="${x}" y="${by}" width="${bw}" height="${bh}" fill="${color}" rx="2" data-tip="${d.l}: ${v}${unit}"/>`;
+    const lbl=_wxFmtLabel(d.l,n,i);
+    if(lbl) g+=`<text x="${(+x+slot/2-bPad).toFixed(1)}" y="${H-2}" text-anchor="middle" fill="var(--muted)" font-size="8">${lbl}</text>`;
+  });
+  g+=`<line x1="${L}" x2="${L}" y1="${T}" y2="${T+ph}" stroke="var(--border)" stroke-width="1"/>`;
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" onmousemove="wxTipMove(event)" onmouseleave="wxTipHide()">${g}</svg>`;
+}
+
+function wxLineChart(id, data, color, unit){
+  const el=document.getElementById(id);
+  const valid=data?data.filter(d=>d.v!=null):[];
+  if(!valid.length){
+    el.innerHTML='<p style="color:var(--muted);text-align:center;padding:1.5rem 0">No data for this period</p>';
+    return;
+  }
+  const {W,H,L,R,T,B}=_WC;
+  const pw=W-L-R, ph=H-T-B;
+  const n=data.length;
+  const vArr=valid.map(d=>d.v);
+  let vMin=Math.min(...vArr), vMax=Math.max(...vArr);
+  const rng=vMax-vMin||1;
+  vMin-=rng*0.1; vMax+=rng*0.1;
+  const xOf=i=>L+(i/(n-1||1))*pw;
+  const yOf=v=>T+ph-((v-vMin)/(vMax-vMin))*ph;
+
+  let g='';
+  for(let i=0;i<=4;i++){
+    const v=vMin+(vMax-vMin)*i/4;
+    const y=yOf(v).toFixed(1);
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    g+=`<text x="${L-3}" y="${(+y+4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="9">${v.toFixed(1)}</text>`;
+  }
+  // Line segments (handle gaps from null values)
+  let pts=[],segs=[];
+  data.forEach((d,i)=>{
+    if(d.v!=null){ pts.push(`${xOf(i).toFixed(1)},${yOf(d.v).toFixed(1)}`); }
+    else { if(pts.length>1) segs.push(pts); pts=[]; }
+  });
+  if(pts.length>1) segs.push(pts);
+  segs.forEach(s=>{
+    g+=`<polyline points="${s.join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  });
+  // Dots
+  data.forEach((d,i)=>{
+    if(d.v==null) return;
+    const x=xOf(i).toFixed(1), y=yOf(d.v).toFixed(1);
+    g+=`<circle class="wx-dot" cx="${x}" cy="${y}" r="3.5" fill="${color}" stroke="var(--card)" stroke-width="1.5" data-tip="${d.l}: ${d.v}${unit}"/>`;
+    const lbl=_wxFmtLabel(d.l,n,i);
+    if(lbl) g+=`<text x="${x}" y="${H-2}" text-anchor="middle" fill="var(--muted)" font-size="8">${lbl}</text>`;
+  });
+  g+=`<line x1="${L}" x2="${L}" y1="${T}" y2="${T+ph}" stroke="var(--border)" stroke-width="1"/>`;
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" onmousemove="wxTipMove(event)" onmouseleave="wxTipHide()">${g}</svg>`;
+}
+
+async function wxLoadCharts(){
+  let cd;
+  try { cd = await api(WX+'/chart?period='+wxPeriod); } catch(e){ cd=null; }
+  if(!cd||!cd.length){
+    ['wx-chart-rain','wx-chart-temp','wx-chart-pressure'].forEach(id=>{
+      document.getElementById(id).innerHTML='<p style="color:var(--muted);text-align:center;padding:1.5rem 0">No data for this period</p>';
+    });
+    return;
+  }
+  wxBarChart('wx-chart-rain',  cd.map(d=>({l:d.bucket,v:d.rain_mm??0})),    '#3b82f6',' mm');
+  wxLineChart('wx-chart-temp', cd.map(d=>({l:d.bucket,v:d.avg_temp})),       '#f97316','°C');
+  wxLineChart('wx-chart-pressure', cd.map(d=>({l:d.bucket,v:d.avg_pressure})),'#a855f7',' hPa');
 }
 
 async function wxInit(){ await wxLoad(); }
@@ -2242,32 +2414,23 @@ async function wxLoad(){
     document.getElementById('wx-time').textContent    = String(l.received_at||'').slice(0,16).replace('T',' ');
     document.getElementById('wx-wind').textContent    = l.wind_speed_kmh != null ? l.wind_speed_kmh.toFixed(1)+' km/h' : '—';
     document.getElementById('wx-dir-lbl').textContent = wxDirLabel(l.wind_dir_deg);
-    // Rotate compass arrow (arrow points FROM, so rotate to wind_dir_deg)
+    document.getElementById('wx-pressure').textContent = l.pressure_hpa != null ? l.pressure_hpa.toFixed(1)+' hPa' : '—';
+    document.getElementById('wx-pressure-sub').textContent = l.pressure_hpa != null ? 'Atmospheric' : 'No sensor';
     if (l.wind_dir_deg != null)
       document.getElementById('wx-arrow').setAttribute('transform','rotate('+l.wind_dir_deg+',40,40)');
   }
   document.getElementById('wx-rain-today').textContent = (sum.today_mm??0)+' mm';
   document.getElementById('wx-rain-hour').textContent  = 'Last hour: '+(sum.hour_mm??0)+' mm';
 
-  // 7-day table
-  const dTbody = document.getElementById('wx-daily-tbody');
-  if (!sum.daily || !sum.daily.length){
-    dTbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1rem">No data yet.</td></tr>';
-  } else {
-    dTbody.innerHTML = sum.daily.map(d=>`<tr>
-      <td>${_esc(d.day||'')}</td>
-      <td>${d.rain_mm??0} mm</td>
-      <td>${d.avg_temp_c != null ? d.avg_temp_c+'°C' : '—'}</td>
-      <td>${d.max_wind_kmh != null ? d.max_wind_kmh+' km/h' : '—'}</td>
-    </tr>`).join('');
-  }
+  // Charts
+  await wxLoadCharts();
 
   // Recent readings table (last 40)
   let rows;
   try { rows = await api(WX+'/readings?limit=40'); } catch(e){ rows = null; }
   const rTbody = document.getElementById('wx-readings-tbody');
   if (!rows || !rows.length){
-    rTbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1rem">No readings yet.</td></tr>';
+    rTbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1rem">No readings yet.</td></tr>';
   } else {
     rTbody.innerHTML = rows.map(r=>`<tr>
       <td style="white-space:nowrap">${_esc(String(r.received_at||'').slice(0,16).replace('T',' '))}</td>
@@ -2275,7 +2438,8 @@ async function wxLoad(){
       <td>${r.rain_tips??0}</td>
       <td>${r.wind_speed_kmh != null ? r.wind_speed_kmh.toFixed(1) : '—'}</td>
       <td>${wxDirLabel(r.wind_dir_deg)}</td>
-      <td>${r.battery_pct??'—'}${r.battery_pct!=null?'%':''}</td>
+      <td>${r.pressure_hpa != null ? r.pressure_hpa.toFixed(1)+' hPa' : '—'}</td>
+      <td>${r.battery_pct!=null?r.battery_pct+'%':'—'}</td>
     </tr>`).join('');
   }
 }

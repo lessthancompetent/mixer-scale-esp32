@@ -289,8 +289,11 @@ mqttClient.on('message', (_topic, message) => {
       const windKmh  = buf.readUInt16BE(5) / 10.0;
       const windDir  = buf.readUInt16BE(7);
       const batPct   = buf[9];
-      const wxBody   = JSON.stringify({ device_id: deviceId, temp_c: tempC,
-        rain_tips: rainTips, wind_speed_kmh: windKmh, wind_dir_deg: windDir, battery_pct: batPct });
+      const pressHpa = buf.length >= 12 ? buf.readUInt16BE(10) / 10.0 : null;
+      const wxPayload = { device_id: deviceId, temp_c: tempC,
+        rain_tips: rainTips, wind_speed_kmh: windKmh, wind_dir_deg: windDir,
+        battery_pct: batPct, pressure_hpa: pressHpa };
+      const wxBody = JSON.stringify(wxPayload);
       const wxReq = require('http').request({
         hostname: '127.0.0.1', port: 5000, path: '/weather/readings',
         method: 'POST',
@@ -298,8 +301,8 @@ mqttClient.on('message', (_topic, message) => {
       }, r => r.resume());
       wxReq.on('error', e => console.error('[WEATHER→FLASK]', e.message));
       wxReq.write(wxBody); wxReq.end();
-      console.log(`[WX ${deviceId}] ${tempC}°C  wind=${windKmh}km/h  dir=${windDir}°  rain=${rainTips}tips`);
-      broadcastSSE({ type: 'weather', deviceId, tempC, rainTips, windKmh, windDir, batPct });
+      console.log(`[WX ${deviceId}] ${tempC}°C  wind=${windKmh}km/h  dir=${windDir}°  rain=${rainTips}tips${pressHpa!=null?'  pressure='+pressHpa+'hPa':''}`);
+      broadcastSSE({ type: 'weather', deviceId, tempC, rainTips, windKmh, windDir, batPct, pressHpa });
       return;
     }
 

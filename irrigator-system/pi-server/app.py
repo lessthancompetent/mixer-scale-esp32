@@ -574,10 +574,11 @@ def wx_add_reading():
     conn = get_conn()
     conn.execute(
         '''INSERT INTO weather_readings
-           (device_id, temp_c, rain_tips, wind_speed_kmh, wind_dir_deg, battery_pct)
-           VALUES (?,?,?,?,?,?)''',
+           (device_id, temp_c, rain_tips, wind_speed_kmh, wind_dir_deg, battery_pct, pressure_hpa)
+           VALUES (?,?,?,?,?,?,?)''',
         (data.get('device_id', 0), data.get('temp_c'), data.get('rain_tips', 0),
-         data.get('wind_speed_kmh'), data.get('wind_dir_deg'), data.get('battery_pct'))
+         data.get('wind_speed_kmh'), data.get('wind_dir_deg'), data.get('battery_pct'),
+         data.get('pressure_hpa'))
     )
     conn.commit()
     conn.close()
@@ -613,6 +614,35 @@ def wx_summary():
         'latest':    latest,
         'daily':     daily,
     })
+
+
+@app.get('/weather/chart')
+def wx_chart():
+    period = request.args.get('period', '24h')
+    conn = get_conn()
+    if period == '24h':
+        rows = conn.execute('''
+            SELECT strftime('%Y-%m-%d %H:00', received_at) AS bucket,
+                   ROUND(SUM(rain_tips)*0.2, 1)      AS rain_mm,
+                   ROUND(AVG(temp_c), 1)              AS avg_temp,
+                   ROUND(AVG(pressure_hpa), 1)        AS avg_pressure
+            FROM weather_readings
+            WHERE received_at >= datetime('now', '-24 hours')
+            GROUP BY bucket ORDER BY bucket
+        ''').fetchall()
+    else:
+        days = '7' if period == '7d' else '30'
+        rows = conn.execute(f'''
+            SELECT date(received_at)                  AS bucket,
+                   ROUND(SUM(rain_tips)*0.2, 1)      AS rain_mm,
+                   ROUND(AVG(temp_c), 1)              AS avg_temp,
+                   ROUND(AVG(pressure_hpa), 1)        AS avg_pressure
+            FROM weather_readings
+            WHERE received_at >= datetime('now', '-{days} days')
+            GROUP BY bucket ORDER BY bucket
+        ''').fetchall()
+    conn.close()
+    return jsonify(rows_to_list(rows))
 
 
 # ── Root ──────────────────────────────────────────────────────────────────────

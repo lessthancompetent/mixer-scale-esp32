@@ -127,7 +127,8 @@ def init_db():
             rain_tips      INTEGER NOT NULL DEFAULT 0,
             wind_speed_kmh REAL,
             wind_dir_deg   INTEGER,
-            battery_pct    INTEGER
+            battery_pct    INTEGER,
+            pressure_hpa   REAL
         );
 
         CREATE INDEX IF NOT EXISTS idx_pos_session   ON positions(session_id);
@@ -139,6 +140,12 @@ def init_db():
     cols = [r['name'] for r in conn.execute("PRAGMA table_info(positions)").fetchall()]
     if 'battery_soh' not in cols:
         conn.execute('ALTER TABLE positions ADD COLUMN battery_soh INTEGER DEFAULT 0')
+
+    # Migration: add pressure_hpa to pre-existing weather_readings tables
+    wx_cols = [r['name'] for r in conn.execute("PRAGMA table_info(weather_readings)").fetchall()]
+    if 'pressure_hpa' not in wx_cols:
+        conn.execute('ALTER TABLE weather_readings ADD COLUMN pressure_hpa REAL')
+    conn.commit()
 
     # Seed default feed ingredient library if table is empty
     if conn.execute('SELECT COUNT(*) FROM fm_ingredients').fetchone()[0] == 0:
