@@ -548,6 +548,73 @@ def fm_delete_delivery(did):
     return jsonify({'deleted': did})
 
 
+# ── Weather ───────────────────────────────────────────────────────────────────
+
+@app.get('/weather/readings')
+def wx_get_readings():
+    limit     = min(int(request.args.get('limit', 200)), 2000)
+    device_id = request.args.get('device_id')
+    conn = get_conn()
+    if device_id:
+        rows = conn.execute(
+            'SELECT * FROM weather_readings WHERE device_id=? ORDER BY received_at DESC LIMIT ?',
+            (int(device_id), limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            'SELECT * FROM weather_readings ORDER BY received_at DESC LIMIT ?', (limit,)
+        ).fetchall()
+    conn.close()
+    return jsonify(rows_to_list(rows))
+
+
+@app.post('/weather/readings')
+def wx_add_reading():
+    data = request.get_json(force=True, silent=True) or {}
+    conn = get_conn()
+    conn.execute(
+        '''INSERT INTO weather_readings
+           (device_id, temp_c, rain_tips, wind_speed_kmh, wind_dir_deg, battery_pct)
+           VALUES (?,?,?,?,?,?)''',
+        (data.get('device_id', 0), data.get('temp_c'), data.get('rain_tips', 0),
+         data.get('wind_speed_kmh'), data.get('wind_dir_deg'), data.get('battery_pct'))
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True}), 201
+
+
+@app.get('/weather/summary')
+def wx_summary():
+    conn = get_conn()
+    today_tips = conn.execute(
+        "SELECT COALESCE(SUM(rain_tips),0) FROM weather_readings WHERE date(received_at)=date('now')"
+    ).fetchone()[0]
+    hour_tips = conn.execute(
+        "SELECT COALESCE(SUM(rain_tips),0) FROM weather_readings WHERE received_at >= datetime('now','-1 hour')"
+    ).fetchone()[0]
+    latest = row_to_dict(conn.execute(
+        'SELECT * FROM weather_readings ORDER BY received_at DESC LIMIT 1'
+    ).fetchone())
+    # Daily rainfall totals for last 7 days
+    daily = rows_to_list(conn.execute(
+        '''SELECT date(received_at) AS day,
+                  ROUND(SUM(rain_tips)*0.2,1) AS rain_mm,
+                  ROUND(AVG(temp_c),1)         AS avg_temp_c,
+                  ROUND(MAX(wind_speed_kmh),1) AS max_wind_kmh
+           FROM weather_readings
+           WHERE received_at >= datetime('now','-7 days')
+           GROUP BY day ORDER BY day DESC'''
+    ).fetchall())
+    conn.close()
+    return jsonify({
+        'today_mm':  round(today_tips * 0.2, 1),
+        'hour_mm':   round(hour_tips  * 0.2, 1),
+        'latest':    latest,
+        'daily':     daily,
+    })
+
+
 # ── Root ──────────────────────────────────────────────────────────────────────
 
 @app.get('/')

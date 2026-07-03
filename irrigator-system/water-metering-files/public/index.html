@@ -454,6 +454,7 @@
     <button class="tab-btn" onclick="switchTab('irrigator')">Irrigator Map</button>
     <button class="tab-btn" onclick="switchTab('feedmixer')">Feed Mixer</button>
     <button class="tab-btn" onclick="switchTab('feedinv')">Feed Inventory</button>
+    <button class="tab-btn" onclick="switchTab('weather')">Weather</button>
     <button class="tab-btn" onclick="switchTab('devsettings')">Device Settings</button>
   </nav>
 
@@ -802,6 +803,71 @@
         <div id="fm-ing-list"><p style="color:var(--muted);font-size:0.85rem">Loading…</p></div>
       </div>
     </div>
+
+    <!-- ── Weather tab ── -->
+    <div id="tab-weather" class="tab-panel">
+
+      <!-- Current conditions -->
+      <div class="grid" id="wx-cards" style="margin-bottom:1rem">
+        <div class="card">
+          <div class="card-label">Temperature</div>
+          <div class="card-value" id="wx-temp">—</div>
+          <div class="card-sub" id="wx-time"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Wind</div>
+          <div class="card-value" id="wx-wind">—</div>
+          <div class="card-sub" id="wx-dir-lbl"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Rain today</div>
+          <div class="card-value" id="wx-rain-today">—</div>
+          <div class="card-sub" id="wx-rain-hour"></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <div class="card-label" style="margin-bottom:6px">Wind direction</div>
+          <div id="wx-compass" style="position:relative;width:80px;height:80px">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <circle cx="40" cy="40" r="38" fill="none" stroke="var(--border)" stroke-width="2"/>
+              <text x="40" y="10" text-anchor="middle" fill="var(--muted)" font-size="9">N</text>
+              <text x="40" y="76" text-anchor="middle" fill="var(--muted)" font-size="9">S</text>
+              <text x="6"  y="43" text-anchor="middle" fill="var(--muted)" font-size="9">W</text>
+              <text x="74" y="43" text-anchor="middle" fill="var(--muted)" font-size="9">E</text>
+              <g id="wx-arrow" transform="rotate(0,40,40)">
+                <polygon points="40,8 36,40 40,34 44,40" fill="var(--accent)"/>
+                <polygon points="40,72 36,40 40,46 44,40" fill="var(--muted)" opacity="0.5"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7-day summary -->
+      <div class="fm-section">
+        <h3>7-Day Summary</h3>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead><tr><th>Date</th><th>Rain (mm)</th><th>Avg Temp</th><th>Max Wind</th></tr></thead>
+            <tbody id="wx-daily-tbody">
+              <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Recent readings -->
+      <div class="fm-section" style="margin-top:1rem">
+        <h3>Recent Readings</h3>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead><tr><th>Time</th><th>Temp</th><th>Rain tips</th><th>Wind km/h</th><th>Direction</th><th>Bat%</th></tr></thead>
+            <tbody id="wx-readings-tbody">
+              <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- #tab-weather -->
 
     <!-- ── Device Settings tab ── -->
     <div id="tab-devsettings" class="tab-panel" style="position:relative">
@@ -1357,7 +1423,7 @@ let activeTab='vat';
 function switchTab(tab){
   if (tab==='devsettings' && !isDevAuthed()){
     activeTab=tab;
-    const tabs=['vat','water','irrigator','feedmixer','feedinv','devsettings'];
+    const tabs=['vat','water','irrigator','feedmixer','feedinv','weather','devsettings'];
     document.querySelectorAll('.tab-btn').forEach((b,i)=>{
       b.classList.toggle('active', tabs[i]===tab);
     });
@@ -1370,7 +1436,7 @@ function switchTab(tab){
     return;
   }
   activeTab=tab;
-  const tabs=['vat','water','irrigator','feedmixer','feedinv','devsettings'];
+  const tabs=['vat','water','irrigator','feedmixer','feedinv','weather','devsettings'];
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
     b.classList.toggle('active', tabs[i]===tab);
   });
@@ -1381,6 +1447,7 @@ function switchTab(tab){
   if (tab==='irrigator')   irrInit();
   if (tab==='feedmixer')   fmInit();
   if (tab==='feedinv')     fmInvInit();
+  if (tab==='weather')     wxInit();
   if (tab==='devsettings') devInit();
 }
 
@@ -1408,6 +1475,9 @@ function startSSE(){
     else if (d.type==='feedmix_log'){
       if (activeTab==='feedmixer') fmLoadLog();
       else if (activeTab==='feedinv') fmInvLoad();
+    }
+    else if (d.type==='weather'){
+      if (activeTab==='weather') wxLoad();
     }
     else {if (activeTab==='vat') refreshAll();}
   };
@@ -2144,6 +2214,70 @@ async function fmInvDelete(id){
   if (!confirm('Delete this delivery entry?')) return;
   await api(FM+'/inventory/'+id,{method:'DELETE'});
   fmInvLoad();
+}
+
+// ── Weather ───────────────────────────────────────────────────────────
+const WX = '/weather-api';
+const DIR_LABELS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+
+function wxDirLabel(deg){
+  if (deg == null) return '—';
+  return DIR_LABELS[Math.round(deg / 22.5) % 16];
+}
+
+async function wxInit(){ await wxLoad(); }
+
+async function wxLoad(){
+  let sum;
+  try { sum = await api(WX+'/summary'); } catch(e){ sum = null; }
+  if (!sum || sum.error){
+    document.getElementById('wx-temp').textContent = 'Unavailable';
+    return;
+  }
+
+  // Current conditions from latest reading
+  const l = sum.latest;
+  if (l){
+    document.getElementById('wx-temp').textContent    = l.temp_c != null ? l.temp_c.toFixed(1)+'°C' : '—';
+    document.getElementById('wx-time').textContent    = String(l.received_at||'').slice(0,16).replace('T',' ');
+    document.getElementById('wx-wind').textContent    = l.wind_speed_kmh != null ? l.wind_speed_kmh.toFixed(1)+' km/h' : '—';
+    document.getElementById('wx-dir-lbl').textContent = wxDirLabel(l.wind_dir_deg);
+    // Rotate compass arrow (arrow points FROM, so rotate to wind_dir_deg)
+    if (l.wind_dir_deg != null)
+      document.getElementById('wx-arrow').setAttribute('transform','rotate('+l.wind_dir_deg+',40,40)');
+  }
+  document.getElementById('wx-rain-today').textContent = (sum.today_mm??0)+' mm';
+  document.getElementById('wx-rain-hour').textContent  = 'Last hour: '+(sum.hour_mm??0)+' mm';
+
+  // 7-day table
+  const dTbody = document.getElementById('wx-daily-tbody');
+  if (!sum.daily || !sum.daily.length){
+    dTbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1rem">No data yet.</td></tr>';
+  } else {
+    dTbody.innerHTML = sum.daily.map(d=>`<tr>
+      <td>${_esc(d.day||'')}</td>
+      <td>${d.rain_mm??0} mm</td>
+      <td>${d.avg_temp_c != null ? d.avg_temp_c+'°C' : '—'}</td>
+      <td>${d.max_wind_kmh != null ? d.max_wind_kmh+' km/h' : '—'}</td>
+    </tr>`).join('');
+  }
+
+  // Recent readings table (last 40)
+  let rows;
+  try { rows = await api(WX+'/readings?limit=40'); } catch(e){ rows = null; }
+  const rTbody = document.getElementById('wx-readings-tbody');
+  if (!rows || !rows.length){
+    rTbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1rem">No readings yet.</td></tr>';
+  } else {
+    rTbody.innerHTML = rows.map(r=>`<tr>
+      <td style="white-space:nowrap">${_esc(String(r.received_at||'').slice(0,16).replace('T',' '))}</td>
+      <td>${r.temp_c != null ? r.temp_c.toFixed(1)+'°C' : '—'}</td>
+      <td>${r.rain_tips??0}</td>
+      <td>${r.wind_speed_kmh != null ? r.wind_speed_kmh.toFixed(1) : '—'}</td>
+      <td>${wxDirLabel(r.wind_dir_deg)}</td>
+      <td>${r.battery_pct??'—'}${r.battery_pct!=null?'%':''}</td>
+    </tr>`).join('');
+  }
 }
 
 // ── Utility ───────────────────────────────────────────────────────────

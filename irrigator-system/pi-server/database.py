@@ -119,9 +119,21 @@ def init_db():
             kg_delivered    REAL NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS weather_readings (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id      INTEGER NOT NULL,
+            received_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            temp_c         REAL,
+            rain_tips      INTEGER NOT NULL DEFAULT 0,
+            wind_speed_kmh REAL,
+            wind_dir_deg   INTEGER,
+            battery_pct    INTEGER
+        );
+
         CREATE INDEX IF NOT EXISTS idx_pos_session   ON positions(session_id);
         CREATE INDEX IF NOT EXISTS idx_pos_timestamp ON positions(timestamp);
         CREATE INDEX IF NOT EXISTS idx_alerts_ack    ON alerts(acknowledged);
+        CREATE INDEX IF NOT EXISTS idx_wx_received   ON weather_readings(received_at);
     ''')
     # Migration: add battery_soh to pre-existing positions tables
     cols = [r['name'] for r in conn.execute("PRAGMA table_info(positions)").fetchall()]

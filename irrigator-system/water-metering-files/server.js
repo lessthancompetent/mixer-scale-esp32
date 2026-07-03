@@ -282,6 +282,27 @@ mqttClient.on('message', (_topic, message) => {
       return;
     }
 
+    // Weather station uplink (fPort=12, type 0x60)
+    if (fPort === 12 && buf.length >= 10 && buf[0] === 0x60) {
+      const tempC    = buf.readInt16BE(1) / 100.0;
+      const rainTips = buf.readUInt16BE(3);
+      const windKmh  = buf.readUInt16BE(5) / 10.0;
+      const windDir  = buf.readUInt16BE(7);
+      const batPct   = buf[9];
+      const wxBody   = JSON.stringify({ device_id: deviceId, temp_c: tempC,
+        rain_tips: rainTips, wind_speed_kmh: windKmh, wind_dir_deg: windDir, battery_pct: batPct });
+      const wxReq = require('http').request({
+        hostname: '127.0.0.1', port: 5000, path: '/weather/readings',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(wxBody) },
+      }, r => r.resume());
+      wxReq.on('error', e => console.error('[WEATHER→FLASK]', e.message));
+      wxReq.write(wxBody); wxReq.end();
+      console.log(`[WX ${deviceId}] ${tempC}°C  wind=${windKmh}km/h  dir=${windDir}°  rain=${rainTips}tips`);
+      broadcastSSE({ type: 'weather', deviceId, tempC, rainTips, windKmh, windDir, batPct });
+      return;
+    }
+
     // Feed mixer log v2 (fPort=11, type 0x51): date/herd/cows/loaded/fedout/dm-per-ing
     if (fPort === 11 && buf.length >= 9 && buf[0] === 0x51) {
       const herdIdx      = buf[1];
@@ -394,6 +415,16 @@ app.use('/feedmixer-api', requireAuth, createProxyMiddleware({
   on: {
     error: (_err, _req, res) =>
       res.status(502).json({ error: 'Feed mixer server unavailable — is Flask running on port 5000?' }),
+  },
+}));
+
+app.use('/weather-api', requireAuth, createProxyMiddleware({
+  target: 'http://127.0.0.1:5000',
+  changeOrigin: true,
+  pathRewrite: { '^/': '/weather/' },
+  on: {
+    error: (_err, _req, res) =>
+      res.status(502).json({ error: 'Weather server unavailable — is Flask running on port 5000?' }),
   },
 }));
 
