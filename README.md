@@ -28,6 +28,13 @@ mixer-scale-esp32/
 └── irrigator-system/
     ├── feedmix-t3/
     │   └── feedmix-t3.ino          # T3 cab display firmware (Arduino/PlatformIO)
+    ├── weather-station/
+    │   ├── weather-station.ino     # LoRaWAN weather station firmware (TTGO LoRa32 v1)
+    │   └── platformio.ini
+    ├── weather-display-7b/
+    │   ├── README.md                # Setup guide for the 7" dashboard
+    │   ├── lv_conf.h                 # LVGL config (copy into Arduino/libraries/)
+    │   └── weather_display_7b/       # Arduino sketch (WiFi + LVGL dashboard)
     ├── pi-server/
     │   ├── app.py                  # Flask REST API
     │   ├── database.py             # SQLite schema + migrations
@@ -75,6 +82,14 @@ cd irrigator-system/feedmix-t3
 pio run --target upload
 pio device monitor
 ```
+
+---
+
+## Weather Station & Display
+
+**Field unit (`weather-station/`):** TTGO LoRa32 v1 with DS18B20 temperature, tipping-bucket rain gauge, reed-switch anemometer, resistive wind vane, and a BME280 for atmospheric pressure. Uplinks on fPort 12 (type `0x60`) every 10 minutes; the Pi decodes and stores readings, and the web UI's **Weather** tab shows current conditions plus rainfall/temperature/pressure charts over 24h/7d/30d.
+
+**7" dashboard (`weather-display-7b/`):** a Waveshare ESP32-S3-Touch-LCD-7B (1024×600 touchscreen) that polls the Pi's Flask weather API directly over WiFi and shows current conditions with a compass and tap-to-expand history charts. It's a read-only display, not a LoRaWAN device — see `weather-display-7b/README.md` for Arduino IDE setup and wiring it to your Pi.
 
 ---
 
@@ -143,6 +158,7 @@ Open `http://192.168.5.111:3000` on any device on the farm network.
 | **Irrigator Map** | GPS track of effluent irrigator, spread area calculation |
 | **Feed Mixer** | Herd management, ration entry, feed log (loaded vs fed-out, residual) |
 | **Feed Inventory** | Log feed deliveries; stock summary (delivered minus consumed) |
+| **Weather** | Current conditions, compass, rainfall/temperature/pressure charts (24h/7d/30d) |
 | **Device Settings** | Register/edit LoRaWAN devices (password protected) |
 
 Live updates are pushed to the browser via Server-Sent Events — no manual refresh needed.

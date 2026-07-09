@@ -625,6 +625,8 @@ def wx_chart():
             SELECT strftime('%Y-%m-%d %H:00', received_at) AS bucket,
                    ROUND(SUM(rain_tips)*0.2, 1)      AS rain_mm,
                    ROUND(AVG(temp_c), 1)              AS avg_temp,
+                   ROUND(MIN(temp_c), 1)              AS min_temp,
+                   ROUND(MAX(temp_c), 1)              AS max_temp,
                    ROUND(AVG(pressure_hpa), 1)        AS avg_pressure
             FROM weather_readings
             WHERE received_at >= datetime('now', '-24 hours')
@@ -636,6 +638,8 @@ def wx_chart():
             SELECT date(received_at)                  AS bucket,
                    ROUND(SUM(rain_tips)*0.2, 1)      AS rain_mm,
                    ROUND(AVG(temp_c), 1)              AS avg_temp,
+                   ROUND(MIN(temp_c), 1)              AS min_temp,
+                   ROUND(MAX(temp_c), 1)              AS max_temp,
                    ROUND(AVG(pressure_hpa), 1)        AS avg_pressure
             FROM weather_readings
             WHERE received_at >= datetime('now', '-{days} days')
