@@ -924,12 +924,20 @@
             </div>
             <div>
               <label style="font-size:0.78rem;color:var(--muted)">Type</label>
-              <select id="dev-type" class="fm-input" style="width:100%">
+              <select id="dev-type" class="fm-input" style="width:100%" onchange="devToggleRoleField()">
                 <option value="water">Water Meter</option>
                 <option value="vat">VAT Tap</option>
                 <option value="irrigator">Irrigator</option>
                 <option value="feedmixer">Feed Mixer</option>
                 <option value="other">Other</option>
+              </select>
+            </div>
+            <div id="dev-role-wrap" style="display:none">
+              <label style="font-size:0.78rem;color:var(--muted)">Meter Role</label>
+              <select id="dev-role" class="fm-input" style="width:100%">
+                <option value="">— (reports both, e.g. legacy dual-channel node) —</option>
+                <option value="tank">Tank</option>
+                <option value="farm">Farm</option>
               </select>
             </div>
             <div>
@@ -2514,9 +2522,10 @@ async function devInit(){
     return;
   }
   const TYPE_LABELS = {water:'Water Meter',vat:'VAT Tap',irrigator:'Irrigator',feedmixer:'Feed Mixer',other:'Other'};
+  const ROLE_LABELS = {tank:'Tank',farm:'Farm'};
   tbody.innerHTML = rows.map(d=>`
     <tr>
-      <td style="font-weight:600">${_esc(d.name)}</td>
+      <td style="font-weight:600">${_esc(d.name)}${d.meter_role?` <span style="color:var(--muted);font-size:0.75rem">(${ROLE_LABELS[d.meter_role]||d.meter_role})</span>`:''}</td>
       <td><span class="dev-type-badge dev-type-${d.type}">${TYPE_LABELS[d.type]||d.type}</span></td>
       <td style="font-family:monospace;font-size:0.78rem">${_esc(d.dev_eui)}</td>
       <td style="font-family:monospace;font-size:0.78rem">${_esc(d.app_eui||'—')}</td>
@@ -2532,10 +2541,21 @@ async function devInit(){
   `).join('');
 }
 
+function devToggleRoleField(){
+  document.getElementById('dev-role-wrap').style.display =
+    document.getElementById('dev-type').value === 'water' ? 'block' : 'none';
+}
+
 function devToggleForm(clear=true){
   const form = document.getElementById('dev-form');
   const open = form.classList.toggle('open');
-  if (!open || clear){ devEditId=null; ['dev-name','dev-eui','dev-app-eui','dev-app-key','dev-notes'].forEach(id=>document.getElementById(id).value=''); document.getElementById('dev-type').value='water'; }
+  if (!open || clear){
+    devEditId=null;
+    ['dev-name','dev-eui','dev-app-eui','dev-app-key','dev-notes'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('dev-type').value='water';
+    document.getElementById('dev-role').value='';
+    devToggleRoleField();
+  }
 }
 
 function devStartEdit(id){
@@ -2549,6 +2569,8 @@ function devStartEdit(id){
     document.getElementById('dev-app-eui').value = d.app_eui||'';
     document.getElementById('dev-app-key').value = d.app_key||'';
     document.getElementById('dev-notes').value   = d.notes||'';
+    document.getElementById('dev-role').value    = d.meter_role||'';
+    devToggleRoleField();
     const form = document.getElementById('dev-form');
     form.classList.add('open');
     form.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -2557,12 +2579,14 @@ function devStartEdit(id){
 
 async function devSave(){
   const body = {
-    name:    document.getElementById('dev-name').value.trim(),
-    dev_eui: document.getElementById('dev-eui').value.trim(),
-    type:    document.getElementById('dev-type').value,
-    app_eui: document.getElementById('dev-app-eui').value.trim(),
-    app_key: document.getElementById('dev-app-key').value.trim(),
-    notes:   document.getElementById('dev-notes').value.trim(),
+    name:       document.getElementById('dev-name').value.trim(),
+    dev_eui:    document.getElementById('dev-eui').value.trim(),
+    type:       document.getElementById('dev-type').value,
+    app_eui:    document.getElementById('dev-app-eui').value.trim(),
+    app_key:    document.getElementById('dev-app-key').value.trim(),
+    notes:      document.getElementById('dev-notes').value.trim(),
+    meter_role: document.getElementById('dev-type').value === 'water'
+      ? (document.getElementById('dev-role').value || null) : null,
   };
   if (!body.name || !body.dev_eui){ alert('Name and DevEUI are required'); return; }
   const r = devEditId

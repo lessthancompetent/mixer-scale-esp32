@@ -79,7 +79,31 @@ db.exec(`
     notes      TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- Persists each Milesight EM300-DI's last cumulative pulse reading (fPort 85,
+  -- see decodeMilesightEM300DI below) so uplink-to-uplink deltas survive a
+  -- server restart instead of resetting to the full lifetime count.
+  CREATE TABLE IF NOT EXISTS water_meter_counters (
+    dev_eui    TEXT PRIMARY KEY,
+    last_pulse INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// Migration: tag water_readings rows with which protocol produced them, so
+// legacy custom-firmware rows (fPort 2) and EM300-DI rows (fPort 85) are
+// distinguishable when browsing the DB. Added 2026-08 for EM300-DI support.
+const waterCols = db.prepare("PRAGMA table_info(water_readings)").all().map(c => c.name);
+if (!waterCols.includes('source')) {
+  db.exec("ALTER TABLE water_readings ADD COLUMN source TEXT NOT NULL DEFAULT 'legacy'");
+}
+
+// Migration: which physical meter a registered water device reads (only
+// meaningful when devices.type = 'water'). Set from the Device Settings tab.
+const deviceCols = db.prepare("PRAGMA table_info(devices)").all().map(c => c.name);
+if (!deviceCols.includes('meter_role')) {
+  db.exec("ALTER TABLE devices ADD COLUMN meter_role TEXT");
+}
 
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
 if (userCount === 0) {
@@ -235,6 +259,25 @@ function postToFlask(payload) {
 // Irrigator message types (0x10+ range, distinct from VAT tap 0x00-0x09)
 const IRR_TYPES = new Set([0x10, 0x11, 0x20, 0x30, 0x40]);
 
+// ─── Milesight EM300-DI pulse counter (fPort 85, factory default) ─────────────
+// Payload spec: github.com/Milesight-IoT/SensorDecoders/tree/main/em-series/em300-di
+// Only the channels we act on are parsed here (battery, GPIO digital state,
+// pulse counter); anything else (temperature/humidity/history/alarms — the
+// EM300-DI doesn't send those, but other EM300 siblings might reuse this fn
+// later) stops the loop rather than being mis-parsed.
+function decodeMilesightEM300DI(buf) {
+  const out = {};
+  let i = 0;
+  while (i + 1 < buf.length) {
+    const id = buf[i], type = buf[i + 1];
+    if (id === 0x01 && type === 0x75) { out.battery = buf[i + 2]; i += 3; }
+    else if (id === 0x05 && type === 0x00) { out.gpio = buf[i + 2]; i += 3; }
+    else if (id === 0x05 && type === 0xc8) { out.pulse = buf.readUInt32LE(i + 2); i += 6; }
+    else break; // unhandled channel — stop rather than misparse the rest
+  }
+  return out;
+}
+
 mqttClient.on('message', (_topic, message) => {
   try {
     const body     = JSON.parse(message.toString());
@@ -278,6 +321,53 @@ mqttClient.on('message', (_topic, message) => {
         VALUES (?,?,?,?,?)
       `).run(deviceId, eventType, tankPulses, farmPulses, rawB64);
       console.log(`[WATER ${deviceId}] tank+${tankPulses} farm+${farmPulses}`);
+      broadcastSSE({ type: 'water', deviceId, tankPulses, farmPulses });
+      return;
+    }
+
+    // Milesight EM300-DI pulse counter uplink. Each unit reads ONE meter —
+    // its role (tank/farm) comes from devices.meter_role, set in the
+    // Device Settings tab, not from the payload itself.
+    if (fPort === 85) {
+      const device = db.prepare("SELECT meter_role FROM devices WHERE dev_eui=? AND type='water'").get(deviceId);
+      if (!device || !device.meter_role) {
+        console.warn(`[WATER-EM300DI ${deviceId}] uplink from unregistered/unroled device — register it in Device Settings (type=Water, role=Tank/Farm)`);
+        return;
+      }
+
+      const decoded = decodeMilesightEM300DI(buf);
+      if (decoded.pulse === undefined) {
+        // Device is still in "digital" GPIO mode instead of "counter" mode —
+        // see weather-display/EM300-DI setup doc for the ToolBox config step.
+        console.warn(`[WATER-EM300DI ${deviceId}] no pulse channel in payload — check GPIO mode is set to Counter`);
+        return;
+      }
+
+      const counterRow = db.prepare('SELECT last_pulse FROM water_meter_counters WHERE dev_eui=?').get(deviceId);
+      db.prepare(`
+        INSERT INTO water_meter_counters (dev_eui, last_pulse, updated_at) VALUES (?,?,datetime('now'))
+        ON CONFLICT(dev_eui) DO UPDATE SET last_pulse=excluded.last_pulse, updated_at=excluded.updated_at
+      `).run(deviceId, decoded.pulse);
+
+      if (!counterRow) {
+        console.log(`[WATER-EM300DI ${deviceId}] first uplink seen, storing baseline pulse=${decoded.pulse}`);
+        return; // no prior baseline — nothing to compute a delta against yet
+      }
+
+      // A lower reading than last time means the counter was reset (power
+      // loss, battery change, or a manual clear_counter downlink) rather than
+      // rolled over — uint32 wrapping at 4 billion pulses isn't realistic here.
+      const delta = decoded.pulse >= counterRow.last_pulse
+        ? decoded.pulse - counterRow.last_pulse
+        : decoded.pulse;
+
+      const tankPulses = device.meter_role === 'tank' ? delta : 0;
+      const farmPulses = device.meter_role === 'farm' ? delta : 0;
+      db.prepare(`
+        INSERT INTO water_readings (device_id, event_type, tank_pulses, farm_pulses, raw_payload, source)
+        VALUES (?,?,?,?,?,'em300-di')
+      `).run(deviceId, 0, tankPulses, farmPulses, rawB64);
+      console.log(`[WATER-EM300DI ${deviceId}] ${device.meter_role}+${delta} pulses (battery ${decoded.battery ?? '?'}%)`);
       broadcastSSE({ type: 'water', deviceId, tankPulses, farmPulses });
       return;
     }
@@ -624,12 +714,12 @@ app.get('/api/devices', requireAuth, (req, res) => {
 });
 
 app.post('/api/devices', requireAuth, (req, res) => {
-  const { name, dev_eui, type, app_eui, app_key, notes } = req.body;
+  const { name, dev_eui, type, app_eui, app_key, notes, meter_role } = req.body;
   if (!name || !dev_eui) return res.status(400).json({ error: 'name and dev_eui required' });
   try {
     const r = db.prepare(
-      'INSERT INTO devices (name, dev_eui, type, app_eui, app_key, notes) VALUES (?,?,?,?,?,?)'
-    ).run(name, dev_eui.toLowerCase(), type || 'other', app_eui || '', app_key || '', notes || '');
+      'INSERT INTO devices (name, dev_eui, type, app_eui, app_key, notes, meter_role) VALUES (?,?,?,?,?,?,?)'
+    ).run(name, dev_eui.toLowerCase(), type || 'other', app_eui || '', app_key || '', notes || '', meter_role || null);
     res.json(db.prepare('SELECT * FROM devices WHERE id=?').get(r.lastInsertRowid));
   } catch (e) {
     res.status(409).json({ error: 'DevEUI already registered' });
@@ -637,14 +727,15 @@ app.post('/api/devices', requireAuth, (req, res) => {
 });
 
 app.put('/api/devices/:id', requireAuth, (req, res) => {
-  const { name, dev_eui, type, app_eui, app_key, notes } = req.body;
+  const { name, dev_eui, type, app_eui, app_key, notes, meter_role } = req.body;
   const fields = [], vals = [];
-  if (name    !== undefined) { fields.push('name=?');    vals.push(name); }
-  if (dev_eui !== undefined) { fields.push('dev_eui=?'); vals.push(dev_eui.toLowerCase()); }
-  if (type    !== undefined) { fields.push('type=?');    vals.push(type); }
-  if (app_eui !== undefined) { fields.push('app_eui=?'); vals.push(app_eui); }
-  if (app_key !== undefined) { fields.push('app_key=?'); vals.push(app_key); }
-  if (notes   !== undefined) { fields.push('notes=?');   vals.push(notes); }
+  if (name       !== undefined) { fields.push('name=?');       vals.push(name); }
+  if (dev_eui    !== undefined) { fields.push('dev_eui=?');    vals.push(dev_eui.toLowerCase()); }
+  if (type       !== undefined) { fields.push('type=?');       vals.push(type); }
+  if (app_eui    !== undefined) { fields.push('app_eui=?');    vals.push(app_eui); }
+  if (app_key    !== undefined) { fields.push('app_key=?');    vals.push(app_key); }
+  if (notes      !== undefined) { fields.push('notes=?');      vals.push(notes); }
+  if (meter_role !== undefined) { fields.push('meter_role=?'); vals.push(meter_role || null); }
   if (!fields.length) return res.status(400).json({ error: 'nothing to update' });
   vals.push(req.params.id);
   db.prepare(`UPDATE devices SET ${fields.join(',')} WHERE id=?`).run(...vals);

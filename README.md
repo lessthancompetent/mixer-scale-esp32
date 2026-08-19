@@ -2,6 +2,8 @@
 
 Farm management system built around a Raspberry Pi server, ChirpStack LoRaWAN network server, and LoRa field devices. Covers feed mixer wagon control, effluent irrigator GPS tracking, VAT tap monitoring, and water metering.
 
+**Multiple sessions/people work on this repo against the same live Pi server.** Before touching `pi-server/` or `water-metering-files/` schema or config, check `irrigator-system/CHANGELOG.md` for recent changes that might collide with yours, and add an entry there if your change touches shared schema, config, or running services.
+
 ---
 
 ## System Overview
@@ -26,6 +28,7 @@ Water Meters    ─┘    (MQTT)           SQLite DB
 mixer-scale-esp32/
 ├── README.md
 └── irrigator-system/
+    ├── CHANGELOG.md                 # Cross-session log of schema/infra changes on the Pi
     ├── feedmix-t3/
     │   └── feedmix-t3.ino          # T3 cab display firmware (Arduino/PlatformIO)
     ├── weather-station/
@@ -41,6 +44,7 @@ mixer-scale-esp32/
     │   └── spread_calc.py          # Irrigator spread area calculation
     └── water-metering-files/
         ├── server.js               # Node.js server (auth, MQTT, SSE, proxy)
+        ├── EM300-DI-SETUP.md       # Config guide for Milesight EM300-DI pulse counters
         └── public/
             └── index.html          # Single-page web app
 ```
