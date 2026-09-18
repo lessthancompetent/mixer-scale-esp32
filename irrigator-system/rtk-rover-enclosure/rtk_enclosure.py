@@ -97,7 +97,7 @@ P = dict(
     ant_ribs=5, ant_rib_t=3.0,
     ant_disc_screw_r=50.0, ant_disc_screw_d=2.5,       # 3 x M3 self-tappers through the disc (optional)
     ant_size=(82.0, 60.0, 22.5),                        # ANN-MB body, for the mock-up
-    antenna="ann_mb",    # which antenna the assembly/renders show: "ann_mb", "helical" or "survey"
+    antenna="helical",   # which antenna the assembly/renders show: "helical" (the one in use), "ann_mb" or "survey"
     # survey antenna (K700 type) adapter: a real 5/8"-11 UNC hex bolt, head trapped between the
     # cap and the pipe end, thread standing up through the top. Use a 3/4" long bolt (~14 mm proud).
     srv_bolt_d=16.3, srv_hex_af=24.2, srv_hex_h=10.4, srv_top_t=5.0, srv_body_r_min=18.5,

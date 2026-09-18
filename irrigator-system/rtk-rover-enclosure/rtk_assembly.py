@@ -373,7 +373,7 @@ def main():
     ok = check(P, L, base, lid, M)
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), P["out_dir"])
     os.makedirs(out, exist_ok=True)
-    path = os.path.join(out, "rtk_rover_assembly.step" if P["antenna"] == "ann_mb" else f"rtk_rover_assembly_{P['antenna']}.step")
+    path = os.path.join(out, "rtk_rover_assembly.step" if P["antenna"] == "helical" else f"rtk_rover_assembly_{P['antenna']}.step")
     build_assembly(base, lid, M).export(path)
     print(f"\nwrote {path}  ({len(M) + 2} parts)")
     if not ok:

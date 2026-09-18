@@ -223,8 +223,12 @@ parting face down), 4+ perimeters, no supports.
 
 ## Antenna on top of the pipe
 
-![ANN-MB on its ground plane](out/render_pole_antenna.png)
-![helical antenna cap](out/render_pole_helical.png)
+![helical antenna cap](out/render_pole_antenna.png)
+![ANN-MB on its ground plane](out/render_pole_ann_mb.png)
+
+**In use: a YH-609 helical on this pole.** The ANN-MB2 pair goes on the tractor
+(dual-antenna heading, on welded steel ground planes) and the K700 on the RTK
+base. The other two mounts are kept for reference.
 
 Both mounts use the same pinch-clamp socket over the pipe end (one M4 x 25 +
 nut), both come in the two pipe sizes, and both print upside-down (flat face
@@ -275,8 +279,9 @@ thread standing proud. Check before buying:
 Whichever you use, enter the pole height to the antenna's reference point in
 SW Maps (instrument height), not to the top of the pipe.
 
-`python3 rtk_assembly.py helical` (or `survey`) writes the assembly with that
-antenna instead (`out/rtk_rover_assembly_helical.step`, `..._survey.step`).
+The assembly shows the helical antenna by default; `python3 rtk_assembly.py ann_mb`
+(or `survey`) writes it with that antenna instead (`out/rtk_rover_assembly_ann_mb.step`,
+`..._survey.step`).
 
 ## Phone holder
 

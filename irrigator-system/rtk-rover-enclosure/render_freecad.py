@@ -105,7 +105,7 @@ state()
 _view_prefs.SetBool("UseNavigationAnimations", _anim)
 
 # other antenna variants (python3 rtk_assembly.py helical | survey), pole view only
-for variant in globals().get("VARIANTS", ("helical", "survey")):
+for variant in globals().get("VARIANTS", ("ann_mb", "survey")):
     HEL = os.path.join(OUT, f"rtk_rover_assembly_{variant}.step")
     if not os.path.exists(HEL):
         continue
