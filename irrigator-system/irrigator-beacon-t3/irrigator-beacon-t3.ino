@@ -14,6 +14,7 @@
 #include <LoRa.h>
 #include <TinyGPS++.h>
 #include <time.h>
+#include "esp_timer.h"
 #include "driver/gpio.h"
 #include "board_t3.h"
 #include "protocol.h"
@@ -21,6 +22,7 @@
 
 #define FIX_TIMEOUT_MS     60000UL   // give up on a fix after this long
 #define REPLY_WINDOW_MS    600UL     // listen this long for MSG_PUMP_STATE
+#define WAKE_CAP_MS        90000UL   // hard cap on time awake per wake (radio/SPI fault guard)
 
 RTC_DATA_ATTR BeaconState st;        // survives deep sleep
 RTC_DATA_ATTR uint8_t     gnssIsOn;
@@ -38,33 +40,6 @@ void gnssPower(bool on) {
   gpio_hold_en((gpio_num_t)GNSS_EN_PIN);
   gpio_deep_sleep_hold_en();
   gnssIsOn = on ? 1 : 0;
-}
-
-// ── u-blox UBX (M10 uses CFG-VALSET, RAM layer — resent after each power-up) ─
-void sendUBX(uint8_t cls, uint8_t id, const uint8_t *payload, uint16_t len) {
-  uint8_t header[6] = { 0xB5, 0x62, cls, id,
-                        (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
-  gpsSerial.write(header, 6);
-  uint8_t ckA = 0, ckB = 0;
-  for (int i = 2; i < 6; i++) { ckA += header[i]; ckB += ckA; }
-  for (uint16_t i = 0; i < len; i++) {
-    gpsSerial.write(payload[i]);
-    ckA += payload[i]; ckB += ckA;
-  }
-  gpsSerial.write(ckA);
-  gpsSerial.write(ckB);
-  gpsSerial.flush();
-}
-
-// SBAS (SouthPAN) ranging + differential corrections.
-void enableSBAS() {
-  const uint8_t payload[] = {
-    0x00, 0x01, 0x00, 0x00,              // version, RAM layer, reserved
-    0x20, 0x00, 0x31, 0x10, 0x01,        // CFG-SIGNAL-SBAS_ENA
-    0x10, 0x00, 0x36, 0x10, 0x01,        // CFG-SBAS-USE_RANGING
-    0x11, 0x00, 0x36, 0x10, 0x01,        // CFG-SBAS-USE_DIFFCORR
-  };
-  sendUBX(0x06, 0x8A, payload, sizeof(payload));
 }
 
 // Wait for a position newer than this wake. Returns false on timeout.
@@ -97,6 +72,11 @@ bool loraBegin() {
   LoRa.setSpreadingFactor(PROTO_LORA_SF);
   LoRa.setSignalBandwidth(PROTO_LORA_BW_HZ);
   LoRa.setCodingRate4(PROTO_LORA_CR);
+  // Reject bit-flipped packets at the edge of range instead of letting a
+  // corrupt lat/lon reach the pump module's stall detector. Explicit-header
+  // mode carries CRC presence in the header, so this stays compatible with
+  // unmodified receivers and legacy senders that transmit without CRC.
+  LoRa.enableCrc();
   return true;
 }
 
@@ -127,23 +107,42 @@ bool listenForPumpState(unsigned long windowMs) {
   return false;
 }
 
+// LoRa.endPacket() spins forever on a radio/SPI fault, which would otherwise
+// leave the ESP32 awake until the battery is flat. This fires WAKE_CAP_MS
+// after boot if setup() hasn't already put the board back to sleep by then:
+// treat the wake as failed (counts toward the idle-cadence dropback) and go
+// back to sleep on the normal schedule.
+void wakeCapCallback(void *arg) {
+  gpsSerial.end();
+  pinMode(GPS_TX_PIN, INPUT);
+  gnssPower(false);
+  beaconOnNoReply(st);
+  esp_sleep_enable_timer_wakeup((uint64_t)beaconSleepSec(st) * 1000000ULL);
+  esp_deep_sleep_start();
+}
+
 // ── One wake cycle ──────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
 
-  bool gnssWasOn = gnssIsOn;
+  esp_timer_handle_t wakeCapTimer;
+  esp_timer_create_args_t wakeCapArgs = {};
+  wakeCapArgs.callback = &wakeCapCallback;
+  wakeCapArgs.name     = "wakecap";
+  esp_timer_create(&wakeCapArgs, &wakeCapTimer);
+  esp_timer_start_once(wakeCapTimer, (uint64_t)WAKE_CAP_MS * 1000ULL);
+
   gnssPower(true);
   gpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-  if (!gnssWasOn) {
-    delay(500);                      // let the receiver boot before configuring
-    enableSBAS();
-  }
 
   bool haveFix = waitForFix(FIX_TIMEOUT_MS);
   uint8_t batt = readBattPct();
 
   if (!loraBegin()) {
     Serial.println("[LoRa] init failed");
+    // Count this as a missed wake too, so the pump-on cadence still decays
+    // to idle (and the GNSS gets powered down) if LoRa stays down.
+    beaconOnNoReply(st);
   } else {
     if (haveFix) {
       GpsReport r;
@@ -167,7 +166,13 @@ void setup() {
     LoRa.sleep();
   }
 
-  if (!st.pumpOn) gnssPower(false);
+  if (!st.pumpOn) {
+    // Stop driving the UART before cutting GNSS power so we don't back-feed
+    // the unpowered module through the TX line.
+    gpsSerial.end();
+    pinMode(GPS_TX_PIN, INPUT);
+    gnssPower(false);
+  }
 
   uint32_t sleepSec = beaconSleepSec(st);
   Serial.printf("[SLEEP] pump=%d missed=%d  %us\n", st.pumpOn,
