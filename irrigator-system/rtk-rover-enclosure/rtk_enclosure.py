@@ -117,16 +117,16 @@ P = dict(
     # straight across to the other jaw's screw (2 O-rings, ~50 mm ID x 2.5 mm).
     phone_jaw_w=12.0,    # jaw width (holds the two captive M4 nyloc nuts)
     phone_jaw_travel=6.0,   # each jaw +-6 mm -> phones 76..100 mm wide
-    phone_jaw_bolts=(15.0, 45.0),   # screw positions up from the bottom ledge
+    phone_jaw_bolts=(40.0, 78.0),   # screw positions up from the bottom of the phone
     phone_link_a=18.0,   # link pin offset along the phone from the pivot
     phone_link_y=8.0,    # link pin offset across the phone at the nominal width
     phone_tongue_t=3.0, phone_pin_d=6.0,
     phone_tab=(24.0, 9.0),  # thumb tab on the jaw: length x how far it sticks out
     phone_tilt=45.0,     # screen tilt back from vertical, deg (45 = square-on to your eyes at chest height)
-    phone_arm=88.0,      # pole axis to the cradle centre; keeps the phone's top edge clear of the pole
-    phone_attach=80.0,   # bracket centre, measured up from the bottom of the phone
-    phone_plate_l=150.0, phone_plate_t=3.0, phone_wall=3.0, phone_clear=0.6,
-    phone_rail_l=70.0,   # side rails run this far up from the bottom (below the side buttons)
+    phone_arm=62.0,      # pole axis to the bracket face centre; keeps the phone's top edge clear of the pole
+    phone_attach=122.0,  # bracket centre, up from the bottom of the phone: above the jaw linkage, which is behind the plate
+    phone_plate_l=160.0, phone_plate_t=4.0, phone_wall=3.0, phone_clear=0.6,
+    phone_jaw_span=(30.0, 88.0),   # jaws grip this band, up from the bottom of the phone (88 = just under the side buttons)
     phone_lip=2.5,       # how far the rails reach over the front of the phone
     phone_corner_lip=16.0,   # bottom lips at the two corners only: the gesture bar and USB port stay clear
     phone_port_w=26.0,   # gap in the bottom ledge for a charging cable
@@ -671,7 +671,7 @@ def make_phone_jaw(P, side=1, offset=0.0):
     d = _phone_dims(P)
     w, xb, t, H = d["w"], d["xb"], d["t"], d["H"]
     lip, jw = P["phone_lip"], P["phone_jaw_w"]
-    x0, x1 = xb - P["phone_rail_l"], xb - lip - 1.0          # stops short of the ledge's corner lip
+    x0, x1 = xb - P["phone_jaw_span"][1], xb - P["phone_jaw_span"][0]
     y0 = w / 2 + offset
     j = rbox(x0, y0, t, x1, y0 + jw, H, 0).edges("|Z").edges(">Y").fillet(3.0)
     j = j.union(cq.Workplane("YZ", origin=(x0, 0, 0))

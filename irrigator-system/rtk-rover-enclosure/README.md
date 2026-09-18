@@ -293,7 +293,9 @@ is always centred:
   ledge's corner lips only reach 2.5 mm over the glass, the middle of the
   bottom edge is open for the gesture bar, and there is a 26 mm gap for a
   charging cable. Prints flat, back down, no supports.
-* `phone_jaw_left.stl`, `phone_jaw_right.stl`: the side rails. Each slides
+* `phone_jaw_left.stl`, `phone_jaw_right.stl`: the side rails, gripping the band
+  **30-88 mm up from the bottom of the phone** (`phone_jaw_span`; 88 mm is just
+  under the side buttons), so they hold it near its middle. Each slides
   +-6 mm (phones 76-100 mm wide) on two M4 x 25 screws that come through the
   slots from the back into nyloc nuts in the jaw; leave the nuts just slack
   enough to slide. Each has a thumb tab.
@@ -316,15 +318,37 @@ held.
 
 * `phone_bracket_od*.stl`: half clamp plus an arm with a **45 degree** face
   (`phone_tilt`), so at chest height the screen is square-on to your eyes with
-  the pole held vertical. The arm puts the cradle centre 88 mm from the pole
-  axis (`phone_arm`), which is what it takes for the top of a 176 mm phone to
-  lean back without touching the pipe. Prints lying on its side.
+  the pole held vertical. It screws on 122 mm up from the bottom of the phone
+  (`phone_attach`), above the jaw linkage, and stands the cradle 62 mm off the
+  pole axis (`phone_arm`) so the top of the phone leans back clear of the pipe.
+  Prints lying on its side.
 * `phone_clamp_cap_od*.stl`: other half of the clamp, 4 x M4 x 25 into nuts
   that slide into slots in the sides of the bracket.
 
 The cradle screws to the bracket with 4 x M3 x 10 countersunk thread-forming
 screws from the front (heads sit flush under the phone). Mount it
 on the opposite side of the pole from the receiver box, at about chest height.
+
+## Print materials
+
+| Part | Material | Why |
+|------|----------|-----|
+| Box base and lid | **ASA**, white or light grey | UV-stable, holds the gasket squeeze without creeping, fine to 90 C. A light colour keeps the 18650 cooler in the sun. 5 perimeters, 5 top/bottom layers, 25 % infill, 0.2 mm layers; seal the outside with a wipe of acetone or a coat of clear if it weeps. |
+| Pipe clamp, antenna mount/caps, phone bracket and clamp cap | **ASA** (or PETG) | They are under permanent bolt load, which PLA creeps away from. 5 perimeters, 40 % gyroid. |
+| Phone cradle, jaws, tongues, link | **ASA** or **PETG** | PETG is slightly tougher for the thin link and tongues and slides well; ASA if it lives outside. 4 perimeters, 30 %; link and tongues 100 %. |
+| Optional: jaw pads, a liner strip inside the pipe clamps | **TPU 95A**, 1 mm, or stick-on EVA foam | Grip and no rattle. |
+
+* **No carbon- or metal-filled filament anywhere**: it attenuates the HC-05's
+  2.4 GHz through the box walls and detunes anything near the antenna.
+* **Not PLA**: it relaxes under the clamp bolts and the gasket load within
+  weeks and sags in a hot cab.
+* PETG throughout is an acceptable second choice. It chalks and yellows in a
+  few NZ summers but stays serviceable; ASA does not.
+* ASA wants an enclosed printer and a brim; everything here is small enough
+  (largest part 120 mm) to print in a closed chamber on bed heat alone, with no
+  active chamber heater.
+* Hardware: A2/A4 stainless screws and nuts, silicone (not nitrile) O-rings and
+  gasket cord.
 
 ## Parts list
 
