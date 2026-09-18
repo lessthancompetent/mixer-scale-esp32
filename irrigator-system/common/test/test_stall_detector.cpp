@@ -31,12 +31,18 @@ struct Sim {
   int      dropEvery = 0;      // drop every Nth packet (0 = none)
   int      sent = 0;
   long     firstStallMs = -1;
+  uint32_t baseMs = 32000;     // simulator's base inter-sample interval
 
-  // Advance `seconds` at `speedMh` metres/hour, one sample per 30 s.
+  // Advance `seconds` of simulated time at `speedMh` metres/hour. Samples
+  // arrive every baseMs + 0-2999 ms of jitter (mirrors a real beacon cycle:
+  // sleep for the base interval, then some variable awake/listen time).
   void run(uint32_t seconds, double speedMh) {
-    for (uint32_t t = 0; t < seconds; t += 30) {
-      now += 30000;
-      eastM += speedMh * 30.0 / 3600.0;
+    uint32_t elapsedMs = 0;
+    while (elapsedMs < seconds * 1000UL) {
+      uint32_t dt = baseMs + (uint32_t)(uniform01() * 3000);
+      now += dt;
+      elapsedMs += dt;
+      eastM += speedMh * dt / 3600000.0;   // dt is ms; speedMh is m/h
       sent++;
       if (dropEvery && (sent % dropEvery) == 0) continue;
       double lat = LAT0 + noiseM(sigmaM) / M_PER_DEG;
@@ -44,6 +50,20 @@ struct Sim {
       det.addSample(lat, lon, now);
       if (det.isStalled(now) && firstStallMs < 0) firstStallMs = (long)now;
     }
+  }
+
+  // Add one out-of-place sample, offset `offsetM` east of the true (not
+  // noised) position, consuming the same RNG draws as a normal run()
+  // iteration so a run split around a call to this lines up with an
+  // uninterrupted run using the same seed.
+  void injectOutlier(double offsetM) {
+    uint32_t dt = baseMs + (uint32_t)(uniform01() * 3000);
+    now += dt;
+    sent++;
+    double lat = LAT0 + noiseM(sigmaM) / M_PER_DEG;
+    double lon = LON0 + (eastM + offsetM + noiseM(sigmaM)) / (M_PER_DEG * cos(LAT0 * 3.14159265358979 / 180.0));
+    det.addSample(lat, lon, now);
+    if (det.isStalled(now) && firstStallMs < 0) firstStallMs = (long)now;
   }
 };
 
@@ -71,8 +91,8 @@ static void test_travel_then_stop() {
   long stopMs = (long)s.now;
   s.run(1800, 0.0);
   printf("  (stalled %ld s after stopping)\n", (s.firstStallMs - stopMs) / 1000);
-  CHECK(s.firstStallMs >= stopMs + 180000);
-  CHECK(s.firstStallMs <= stopMs + 540000);
+  CHECK(s.firstStallMs >= stopMs + 244000);  // observed 334 s, +-90 s window
+  CHECK(s.firstStallMs <= stopMs + 424000);
 }
 
 static void test_no_stall_inside_grace() {
@@ -120,7 +140,7 @@ static void test_pump_cycle_resets() {
 static void test_silence_gives_no_verdict() {
   printf("beacon goes silent: stall verdict lapses (no silence trip)\n");
   Sim s; s.det.setPump(true, 0);
-  s.run(3600, 0.0);
+  s.run(1800, 0.0);
   CHECK(s.det.isStalled(s.now));
   CHECK(!s.det.isStalled(s.now + 180000));   // 3 min with no samples
 }
@@ -139,9 +159,9 @@ static void test_last_position() {
   CHECK(!d.lastPosition(la, lo));
   d.setPump(true, 0);
   d.addSample(-45.1, 168.1, 1000);
-  d.addSample(-45.2, 168.2, 2000);
+  d.addSample(-45.1001, 168.1001, 2000);   // ~13 m on - within maxJumpM
   CHECK(d.lastPosition(la, lo));
-  CHECK(fabs(la + 45.2) < 1e-9 && fabs(lo - 168.2) < 1e-9);
+  CHECK(fabs(la + 45.1001) < 1e-9 && fabs(lo - 168.1001) < 1e-9);
 }
 
 static void test_bench_config() {
@@ -151,6 +171,66 @@ static void test_bench_config() {
   s.run(900, 0.0);
   CHECK(s.firstStallMs >= 180000);
   CHECK(s.firstStallMs <= 180000 + 120000);
+}
+
+// ── 5-minute cadence while the pump runs (beacon dropped to idle interval,
+// e.g. after missing replies, while the pump is still on) ──────────────────
+// Single-fix (unaveraged) noise is ~2.1 m combined against a 3 m threshold,
+// so unlike the averaged comparison, confirm=2 here is not fast: expect a
+// verdict within roughly an hour of the grace period ending, not minutes.
+static void test_five_min_cadence_stationary_stalls() {
+  printf("stationary at 5 min cadence (pump on): eventually stalls (single-fix compare)\n");
+  Sim s; s.baseMs = 300000; s.det.setPump(true, 0);
+  s.run(3 * 3600, 0.0);
+  printf("  (stalled %ld s after grace ended)\n", (s.firstStallMs - 900000) / 1000);
+  CHECK(s.firstStallMs >= 900000);
+  CHECK(s.firstStallMs <= 900000 + 3600000);
+}
+
+static void test_five_min_cadence_travelling_never_stalls() {
+  printf("travelling at 100 m/h for 12 h at 5 min cadence (pump on): never stalls\n");
+  Sim s; s.baseMs = 300000; s.det.setPump(true, 0);
+  s.run(12 * 3600, 100.0);
+  CHECK(s.firstStallMs < 0);
+}
+
+// ── F3b: implausible position jumps ─────────────────────────────────────────
+static void test_outlier_does_not_delay_stall_much() {
+  printf("F3b: a single 5 km outlier does not delay a stall verdict by more than 2 min\n");
+
+  rngState = 12345;
+  Sim base; base.det.setPump(true, 0);
+  base.run(3600, 0.0);
+  long baseline = base.firstStallMs;
+  CHECK(baseline >= 0);
+
+  rngState = 12345;
+  Sim s; s.det.setPump(true, 0);
+  s.run(905, 0.0);             // just past the 900 s grace period, before the baseline stall
+  s.injectOutlier(5000.0);     // 5 km jump - must be ignored, not stored
+  s.run(2695, 0.0);            // same total simulated time as the baseline run
+  printf("  (baseline %ld ms, with outlier %ld ms)\n", baseline, s.firstStallMs);
+  CHECK(s.firstStallMs >= 0);
+  CHECK(labs(s.firstStallMs - baseline) <= 120000);
+}
+
+static void test_jump_rejected_then_accepted_after_three() {
+  printf("F3b: 3 consecutive rejected jumps, then the 4th (new location) is accepted\n");
+  StallDetector d; double la, lo;
+  d.setPump(true, 0);
+  d.addSample(LAT0, LON0, 1000);
+  CHECK(d.lastPosition(la, lo) && fabs(la - LAT0) < 1e-9 && fabs(lo - LON0) < 1e-9);
+
+  // 1 km east - well beyond the 200 m maxJumpM default.
+  double newLon = LON0 + 1000.0 / (M_PER_DEG * cos(LAT0 * 3.14159265358979 / 180.0));
+  d.addSample(LAT0, newLon, 2000);   // ignored (1)
+  d.addSample(LAT0, newLon, 3000);   // ignored (2)
+  d.addSample(LAT0, newLon, 4000);   // ignored (3)
+  CHECK(d.lastPosition(la, lo) && fabs(lo - LON0) < 1e-9);   // still the original
+
+  d.addSample(LAT0, newLon, 5000);   // 4th consecutive - accepted, history cleared
+  CHECK(d.lastPosition(la, lo));
+  CHECK(fabs(lo - newLon) < 1e-6);
 }
 
 int main() {
@@ -165,6 +245,10 @@ int main() {
   test_millis_wrap();
   test_last_position();
   test_bench_config();
+  test_five_min_cadence_stationary_stalls();
+  test_five_min_cadence_travelling_never_stalls();
+  test_outlier_does_not_delay_stall_much();
+  test_jump_rejected_then_accepted_after_three();
   printf(failures ? "\n%d FAILURE(S)\n" : "\nALL PASSED\n", failures);
   return failures ? 1 : 0;
 }

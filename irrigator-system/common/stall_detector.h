@@ -19,6 +19,8 @@ struct StallConfig {
   uint32_t staleMs  = 120000UL;  // newest sample older than this = no verdict
   uint8_t  avgCount = 3;         // samples averaged at each end of the window
   uint8_t  confirm  = 2;         // consecutive stalled verdicts required
+  uint32_t groupSpanMs = 150000UL;  // max time span of the samples averaged at one end of the window
+  double   maxJumpM = 200.0;     // ignore a sample this far from the previous one
 };
 
 class StallDetector {
@@ -39,6 +41,20 @@ class StallDetector {
   // Call for every GPS position received from the beacon.
   void addSample(double lat, double lon, uint32_t nowMs) {
     if (!pumpOn_) return;
+    if (count_ > 0) {
+      double d = geoDistanceM(s_[count_ - 1].lat, s_[count_ - 1].lon, lat, lon);
+      if (d > cfg_.maxJumpM) {
+        if (jumpsIgnored_ < 3) {
+          jumpsIgnored_++;
+          return;               // implausible jump - ignore entirely
+        }
+        // Three consecutive implausible jumps: guard against lock-out by
+        // accepting this one and starting a fresh history from it - the
+        // irrigator really was moved.
+        clear();
+      }
+    }
+    jumpsIgnored_ = 0;
     if (count_ == CAP) {
       for (int i = 1; i < CAP; i++) s_[i - 1] = s_[i];
       count_--;
@@ -65,7 +81,7 @@ class StallDetector {
  private:
   struct Sample { double lat, lon; uint32_t t; };
 
-  void clear() { count_ = 0; hits_ = 0; stalled_ = false; }
+  void clear() { count_ = 0; hits_ = 0; stalled_ = false; jumpsIgnored_ = 0; }
 
   void noVerdict() { hits_ = 0; stalled_ = false; }
 
@@ -74,7 +90,7 @@ class StallDetector {
     int n = cfg_.avgCount;
     int first = last - n + 1;
     if (first < 0) return false;
-    if ((s_[last].t - s_[first].t) > cfg_.windowMs / 2) return false;
+    if ((s_[last].t - s_[first].t) > cfg_.groupSpanMs) return false;
     lat = 0; lon = 0;
     for (int i = first; i <= last; i++) { lat += s_[i].lat; lon += s_[i].lon; }
     lat /= n; lon /= n;
@@ -95,8 +111,13 @@ class StallDetector {
 
     double aLat, aLon, bLat, bLon;
     if (!groupMean(newest, aLat, aLon) || !groupMean(ref, bLat, bLon)) {
-      noVerdict();
-      return;
+      // Samples are too spread out to average (e.g. the beacon has dropped
+      // to its idle cadence while the pump is still running). Fall back to
+      // comparing the newest sample directly against the reference sample:
+      // at this wide a spacing a travelling irrigator moves far more than
+      // GNSS noise, so a single-sample compare is still safe.
+      aLat = s_[newest].lat; aLon = s_[newest].lon;
+      bLat = s_[ref].lat;    bLon = s_[ref].lon;
     }
 
     if (geoDistanceM(aLat, aLon, bLat, bLon) < cfg_.threshM) {
@@ -114,4 +135,5 @@ class StallDetector {
   uint32_t pumpOnMs_ = 0;
   uint8_t  hits_     = 0;
   bool     stalled_  = false;
+  uint8_t  jumpsIgnored_ = 0;    // consecutive implausible jumps ignored so far
 };
