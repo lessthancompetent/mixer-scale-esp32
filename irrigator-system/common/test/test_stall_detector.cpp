@@ -31,12 +31,18 @@ struct Sim {
   int      dropEvery = 0;      // drop every Nth packet (0 = none)
   int      sent = 0;
   long     firstStallMs = -1;
+  uint32_t baseMs = 32000;     // simulator's base inter-sample interval
 
-  // Advance `seconds` at `speedMh` metres/hour, one sample per 30 s.
+  // Advance `seconds` of simulated time at `speedMh` metres/hour. Samples
+  // arrive every baseMs + 0-2999 ms of jitter (mirrors a real beacon cycle:
+  // sleep for the base interval, then some variable awake/listen time).
   void run(uint32_t seconds, double speedMh) {
-    for (uint32_t t = 0; t < seconds; t += 30) {
-      now += 30000;
-      eastM += speedMh * 30.0 / 3600.0;
+    uint32_t elapsedMs = 0;
+    while (elapsedMs < seconds * 1000UL) {
+      uint32_t dt = baseMs + (uint32_t)(uniform01() * 3000);
+      now += dt;
+      elapsedMs += dt;
+      eastM += speedMh * dt / 3600000.0;   // dt is ms; speedMh is m/h
       sent++;
       if (dropEvery && (sent % dropEvery) == 0) continue;
       double lat = LAT0 + noiseM(sigmaM) / M_PER_DEG;

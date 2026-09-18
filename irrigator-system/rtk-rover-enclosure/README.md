@@ -378,7 +378,7 @@ To buy:
 | 1 | mini toggle switch MTS-102 (SPDT, 6 mm bush) + silicone boot | Ø6.2 hole; or set `sw_d = 12.2` for a 12 mm IP67 latching push button |
 | 1 | GX12 2-pin panel socket + line plug + dust cap, or IP67 5.5 x 2.1 DC jack | Ø12.2 hole, 5 V charge input |
 | 1 | Schottky diode 1N5819 / SS14 | optional, see wiring |
-| 2 | 3 mm high-brightness LEDs (green, blue), 1 kΩ + 330 Ω + 10 kΩ resistors, BC557 or 2N3906 | status LEDs in the lid, see *Status LEDs* |
+| 2 | 3 mm high-brightness LEDs (green, blue), 1 kΩ + 330 Ω + 10 kΩ resistors, BC557 or 2N3906, 3-pin JST-SM pigtail pair | status LEDs in the lid, see *Status LEDs* |
 | ~0.4 m | Ø2.0 mm silicone O-ring cord + cyanoacrylate | lid gasket, 356 mm cut length |
 | 6 | M3 x 10 button-head screws | lid; thread-forming into Ø2.5 holes (or Ø4.0 holes + M3 heat-set inserts: `lug_hole = 4.0`) |
 | 4 | M3 x 6 pan-head screws | breakout to standoffs |
@@ -452,6 +452,15 @@ fixed**. `RTK_STAT` is among the Micro I/O pads broken out along the side of the
 breakout; check the label against the schematic PDF in the breakout's repo
 before soldering. Without the transistor: `RTK_STAT` pad ─[1 kΩ]─►|─ GND gives
 the same behaviour as the on-board LED.
+
+**Lid connector.** Long flying leads work, but the lid then never comes fully
+off and the joints flex every time it is opened. Better: keep the transistor and
+the three resistors on the base side (built inline and heat-shrunk, taped beside
+the charger module) and put a **3-pin JST-SM wire-to-wire pair** (the pre-crimped
+LED-strip pigtails) in the lead, so the lid carries only the two LEDs:
+pin 1 = PWR LED anode, pin 2 = RTK LED anode, pin 3 = both cathodes to GND.
+About 50 mm of 28 AWG each side; hot-glue the LEDs and the first 10 mm of wire
+to the lid so nothing flexes at the solder joints.
 
 The HC-05 also has its own LED (fast blink = waiting, slow double blink =
 connected) which shows faintly through a light-coloured base.
