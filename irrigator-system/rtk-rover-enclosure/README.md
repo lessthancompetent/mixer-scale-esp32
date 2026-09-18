@@ -331,24 +331,27 @@ on the opposite side of the pole from the receiver box, at about chest height.
 
 ## Print materials
 
-| Part | Material | Why |
-|------|----------|-----|
-| Box base and lid | **ASA**, white or light grey | UV-stable, holds the gasket squeeze without creeping, fine to 90 C. A light colour keeps the 18650 cooler in the sun. 5 perimeters, 5 top/bottom layers, 25 % infill, 0.2 mm layers; seal the outside with a wipe of acetone or a coat of clear if it weeps. |
-| Pipe clamp, antenna mount/caps, phone bracket and clamp cap | **ASA** (or PETG) | They are under permanent bolt load, which PLA creeps away from. 5 perimeters, 40 % gyroid. |
-| Phone cradle, jaws, tongues, link | **ASA** or **PETG** | PETG is slightly tougher for the thin link and tongues and slides well; ASA if it lives outside. 4 perimeters, 30 %; link and tongues 100 %. |
-| Optional: jaw pads, a liner strip inside the pipe clamps | **TPU 95A**, 1 mm, or stick-on EVA foam | Grip and no rattle. |
+This kit is only outdoors while in use, a few days a year, so UV ageing does
+not matter and **PETG for everything** is the sensible choice: easy to print,
+no warping, no chamber heat needed. ASA only earns its keep if the kit ends up
+living outside.
 
+| Part | Material | Settings |
+|------|----------|----------|
+| Box base and lid | PETG | 5 perimeters, 5 top/bottom layers, 25 % infill, 0.2 mm layers |
+| Pipe clamp, antenna mount/caps, phone bracket and clamp cap | PETG | 5 perimeters, 40 % gyroid |
+| Phone cradle, jaws, tongues, link | PETG (PLA is acceptable here) | 4 perimeters, 30 %; link and tongues 100 % |
+| Optional: jaw pads, liner strip inside the pipe clamps | TPU 95A, 1 mm, or stick-on EVA foam | grip, no rattle |
+
+* **Not PLA for anything bolted or gasketed** (box, clamps, mounts, bracket):
+  those parts sit under bolt and gasket load all year, in storage too, and PLA
+  creeps under constant load and softens in a hot vehicle or shed. The phone
+  cradle parts carry no standing load if you unhook the O-rings for storage.
 * **No carbon- or metal-filled filament anywhere**: it attenuates the HC-05's
   2.4 GHz through the box walls and detunes anything near the antenna.
-* **Not PLA**: it relaxes under the clamp bolts and the gasket load within
-  weeks and sags in a hot cab.
-* PETG throughout is an acceptable second choice. It chalks and yellows in a
-  few NZ summers but stays serviceable; ASA does not.
-* ASA wants an enclosed printer and a brim; everything here is small enough
-  (largest part 120 mm) to print in a closed chamber on bed heat alone, with no
-  active chamber heater.
-* Hardware: A2/A4 stainless screws and nuts, silicone (not nitrile) O-rings and
-  gasket cord.
+* A light box colour keeps the 18650 cooler on a sunny day.
+* Hardware: stainless screws and nuts, silicone O-rings and gasket cord.
+* Storage: take the 18650 out, or leave it at about half charge.
 
 ## Parts list
 
