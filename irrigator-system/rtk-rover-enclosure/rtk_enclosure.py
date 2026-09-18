@@ -1,0 +1,548 @@
+#!/usr/bin/env python3
+"""
+Parametric, water-resistant enclosure for a portable RTK GNSS rover built
+around the WildBuckwheat "simpleRTK2B Micro breakout board" v2.1 (ArduSimple
+simpleRTK2B Micro / u-blox ZED-F9P plugged into it, HC-05 Bluetooth on the
+back), an internal 18650 cell in a holder, a charger/boost module, a sealed
+power switch, a capped charging connector and an SMA bulkhead for the
+antenna pigtail.
+
+Sealing concept (like a commercial IP65 box):
+  * a 2.0 mm silicone O-ring cord sits in a groove around the top of the
+    base wall and is squeezed 25 % by the flat underside of the lid,
+  * the six lid screws sit in external lugs, outside the seal line,
+  * every wall opening is a round hole for a gasketed panel component
+    (SMA bulkhead, booted toggle switch, capped GX12/DC charging jack).
+  * the breakout's own micro-USB has no opening by default (usb_mode="none").
+
+All board geometry below was taken from the breakout's published gerbers
+(Gerber_BoardOutlineLayer.GKO, Drill_PTH_Through.DRL, pick-and-place CSV,
+2023-11-26, https://github.com/WildBuckwheat/SimpleRTK2B-Micro-breakout-board):
+
+    outline  : 31.90 x 38.25 mm, corner radius 3.25 mm
+    holes    : 4 x 3.50 mm on a 25.40 x 31.75 mm pattern; the hole centres
+               are the corner-arc centres (3.25 mm in from each edge)
+    micro USB: SMD Micro-B on the +Y edge (the edge the "ANT" arrow points
+               to), plug axis perpendicular to that edge
+    LEDs     : PWR (green) and RTK (red) 0603 on the top face next to USB
+
+Run:   python3 rtk_enclosure.py      -> out/*.stl, out/*.step, out/*.png
+                                        and a printed layout + fit report
+Needs: pip install cadquery          (matplotlib comes with it)
+
+Enclosure coordinate system (mm):
+    X : long axis. +X end wall carries the SMA bulkhead (and the optional
+        micro-USB opening); -X end wall carries the charge jack and switch.
+    Y : across. Battery bay along the -Y wall, board row along +Y.
+    Z : up. Z = 0 is the top surface of the floor inside the base.
+"""
+import os
+import sys
+
+import cadquery as cq
+
+# --------------------------------------------------------------------------
+# Parameters (mm).  Change, re-run, re-slice.
+# --------------------------------------------------------------------------
+P = dict(
+    # ---- shell -------------------------------------------------------------
+    wall=4.0,            # side wall thickness (holds the 2.2 mm gasket groove)
+    floor=2.4,           # base floor thickness
+    lid_t=3.2,           # lid plate thickness
+    corner_r=3.0,        # inside vertical corner radius of the cavity
+    inner_h=22.0,        # floor top to lid underside
+
+    # ---- gasket ------------------------------------------------------------
+    cord_d=2.0,          # silicone O-ring cord diameter
+    groove_w=2.2,        # groove width
+    groove_depth=1.5,    # groove depth -> 25 % squeeze on a 2.0 mm cord
+    groove_offset=2.0,   # groove centre line distance from the cavity wall
+
+    # ---- lid screws (M3 thread-forming into the lugs) -----------------------
+    lug_r=5.5,           # external lug radius
+    lug_e=5.5,           # lug centre distance outside the cavity edge
+    lug_hole=2.5,        # pilot hole (use 4.0 for an M3 heat-set insert)
+    lug_hole_depth=14.0,
+    lid_screw_d=3.4,
+    lid_cbore_d=6.4, lid_cbore_depth=1.5,
+    mid_lugs=True,       # extra lug mid-length on each long wall (6 screws)
+    lip_t=1.2, lip_h=2.0, lip_clear=0.3,   # lid locating lip inside the cavity
+
+    # ---- external mounting tabs at floor level (0 = none) --------------------
+    tab_hole=4.5, tab_len=12.0, tab_out=8.0, tab_t=3.0, tab_pos=(0.22, 0.78),
+
+    # ---- breakout board (from gerbers) ---------------------------------------
+    pcb_len=38.25,       # along enclosure X (gerber Y)
+    pcb_w=31.90,         # along enclosure Y (gerber X)
+    pcb_t=1.6,
+    pcb_corner_r=3.25,
+    hole_d=3.5,
+    pcb_end_gap=2.0,     # board +X edge to the inner face of the +X wall
+    pcb_side_clear=1.0,  # row width margin each side of the board
+
+    # ---- board mounting ------------------------------------------------------
+    standoff_h=10.0,     # floor top to board underside (HC-05 lives here)
+    standoff_d=6.0,
+    standoff_hole=2.5,   # M3 thread-forming, 7 mm deep
+    standoff_hole_depth=7.0,
+    standoff_flare_d=8.5, standoff_flare_h=2.0,
+
+    # ---- things on the board (keep-outs for the fit check) -------------------
+    micro_w=24.0,        # simpleRTK2B Micro across the socket rows (+1 mm each side)
+    micro_len=31.0,      # along the socket rows incl. antenna connector
+    micro_h=9.5,         # above breakout top face incl. sockets and U.FL/SMA
+    hc05_w=16.5, hc05_h=8.5,   # HC-05 (ZS-040 carrier) under the board
+
+    # ---- 18650 holder bay (generic single 18650 holder with wire leads) -------
+    batt_len=78.5,       # holder 77.5 + 1 clearance
+    batt_w=21.5,         # holder 20.5 + 1 clearance
+    batt_h=15.0,         # holder height, information only
+    batt_rib_h=3.0, batt_rib_t=1.5,
+    batt_screw_pitch=0,  # 0 = none; else two M3 holes in the floor on this pitch (breaks the seal)
+    sma_bay_len=16.0,    # free length at the +X end of the battery row for the SMA jack
+
+    # ---- charger / boost module bay ------------------------------------------
+    # default fits Adafruit PowerBoost 1000C (36.3 x 22.9); TP4056+boost boards fit too
+    mod_len=37.5, mod_w=24.0, mod_h=7.0,
+    mod_rib_h=1.5, mod_rib_t=1.2,
+    mod_y_shift=-1.5,    # module bay centre relative to the board-row centre
+
+    # ---- -X end wall: charge jack and power switch ---------------------------
+    charge_d=12.2,       # GX12 aviation connector or IP67 5.5x2.1 DC jack (12 mm panel hole)
+    charge_z=11.0,
+    charge_body_d=13.0, charge_body_depth=16.0,   # keep-out behind the wall
+    sw_d=6.2,            # MTS-102 mini toggle with silicone boot (6 mm bushing)
+    sw_z=11.0,
+    sw_body_w=13.5, sw_body_h=13.5, sw_body_depth=16.0,   # keep-out incl. terminals
+
+    # ---- +X end wall: SMA bulkhead and optional micro-USB opening -------------
+    sma_d=6.5,           # 1/4-36 SMA bulkhead
+    sma_flat=0.0,        # e.g. 5.8 for a D-shaped anti-rotation hole, 0 = round
+    sma_z=11.0,
+    sma_body_len=15.0,   # keep-out behind the wall (jack body + crimp)
+    usb_mode="none",     # "none" (sealed), "direct" (hole for a plug), "panel" (panel-mount extension)
+    usb_cut_w=13.0, usb_cut_h=8.5, usb_cut_r=2.0,
+    usb_center_above_pcb=1.3,
+    usb_panel_screw_pitch=20.0, usb_panel_screw_d=2.6,
+
+    # ---- optional pressure-equalising vent, -X wall above the battery bay ------
+    vent_d=0.0,          # e.g. 6.4 for an M6 Gore-type vent, 0 = none
+    vent_z=17.5,
+
+    # ---- LED windows in the lid above PWR/RTK ---------------------------------
+    led_window="thin",   # "thin" (0.8 mm skin, back-fill with clear resin), "hole", "none"
+    led_window_d=4.0, led_skin=0.8, led_hole_d=2.0,
+
+    out_dir="out",
+    stl_tol=0.05,
+)
+
+# Board features in the gerber frame (mm, origin = J1 pin 1)
+GERBER = dict(
+    x_min=-1.980, x_max=29.920, y_min=-7.710, y_max=30.540,
+    holes=[(1.27, -4.46), (26.67, -4.46), (1.27, 27.29), (26.67, 27.29)],
+    usb=(19.304, 27.178),            # USB1 mid point, plug enters from +Y
+    usb_face_y=31.6,                 # receptacle face, ~1 mm past the edge
+    leds=[(11.176, 28.321), (12.70, 28.321)],   # PWR, RTK
+    micro_rows=(2.971, 24.970),      # H1/H2 2 mm-pitch socket rows
+    micro_y=(-1.0, 30.0),            # Micro board extent along gerber Y (est.)
+    hc05_y=(-5.5, 32.0),             # HC-05 carrier extent along gerber Y (est.)
+)
+
+
+# --------------------------------------------------------------------------
+# Derived layout
+# --------------------------------------------------------------------------
+def layout(P):
+    L = {}
+    corner_intrude = 0.0   # external lugs do not enter the cavity
+    batt_x0 = 4.0
+    row_batt = (0.5, 0.5 + P["batt_w"])
+    div = (row_batt[1], row_batt[1] + P["batt_rib_t"])
+    row_w = P["pcb_w"] + 2 * P["pcb_side_clear"]
+    row_pcb = (div[1], div[1] + row_w)
+    L["W_in"] = row_pcb[1] + 0.5
+    L["batt"] = (batt_x0, row_batt[0], batt_x0 + P["batt_len"], row_batt[1])
+    L["div"] = div
+    L["L_in"] = L["batt"][2] + P["sma_bay_len"]
+    L["H_in"] = P["inner_h"]
+    L["row_pcb"] = row_pcb
+    L["row_c"] = 0.5 * (row_pcb[0] + row_pcb[1])
+
+    # board frame -> enclosure frame: X = bx0 + gy ; Y = by0 - gx
+    g = GERBER
+    pcb_xmax = L["L_in"] - P["pcb_end_gap"]
+    L["bx0"] = pcb_xmax - g["y_max"]
+    L["by0"] = L["row_c"] + 0.5 * (g["x_min"] + g["x_max"])
+    L["pcb_box"] = (L["bx0"] + g["y_min"], L["by0"] - g["x_max"],
+                    L["bx0"] + g["y_max"], L["by0"] - g["x_min"])
+    L["holes"] = [(L["bx0"] + gy, L["by0"] - gx) for gx, gy in g["holes"]]
+    L["usb_y"] = L["by0"] - g["usb"][0]
+    L["usb_z"] = P["standoff_h"] + P["pcb_t"] + P["usb_center_above_pcb"]
+    L["usb_face_x"] = L["bx0"] + g["usb_face_y"]
+    L["leds"] = [(L["bx0"] + gy, L["by0"] - gx) for gx, gy in g["leds"]]
+
+    # -X end wall: charge jack low in the row, switch high in the row
+    L["charge_y"] = row_pcb[0] + 0.5 + P["charge_body_d"] / 2
+    L["sw_y"] = row_pcb[1] - P["corner_r"] - P["sw_body_w"] / 2
+    # module bay behind them, centred (shifted) in the board row
+    mod_x0 = max(P["charge_body_depth"], P["sw_body_depth"]) + 2.0
+    mc = L["row_c"] + P["mod_y_shift"]
+    L["mod"] = (mod_x0, mc - P["mod_w"] / 2, mod_x0 + P["mod_len"], mc + P["mod_w"] / 2)
+    # SMA in the +X wall in front of the battery row
+    L["sma_y"] = 0.5 * (row_batt[0] + row_batt[1]) + 1.0
+    L["vent_y"] = 0.5 * (row_batt[0] + row_batt[1])
+
+    e = P["lug_e"]
+    lugs = [(-e, -e), (L["L_in"] + e, -e), (-e, L["W_in"] + e), (L["L_in"] + e, L["W_in"] + e)]
+    if P["mid_lugs"]:
+        lugs += [(L["L_in"] / 2, -e), (L["L_in"] / 2, L["W_in"] + e)]
+    L["lugs"] = lugs
+    return L
+
+
+# --------------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------------
+def rbox(x0, y0, z0, x1, y1, z1, r=0.0):
+    """Axis-aligned box, optionally with rounded vertical edges."""
+    wp = cq.Workplane("XY", origin=(0, 0, z0)).center((x0 + x1) / 2, (y0 + y1) / 2)
+    s = wp.rect(x1 - x0, y1 - y0).extrude(z1 - z0)
+    if r > 0:
+        s = s.edges("|Z").fillet(r)
+    return s
+
+
+def cyl(p, d, length, axis):
+    """Cylinder of diameter d starting at point p, running `length` along axis."""
+    return cq.Workplane("XY").add(cq.Solid.makeCylinder(d / 2, length, cq.Vector(*p), cq.Vector(*axis)))
+
+
+def cyl_z(x, y, z0, z1, d):
+    return cyl((x, y, z0), d, z1 - z0, (0, 0, 1))
+
+
+def cyl_x(x0, x1, y, z, d, flat=0.0):
+    c = cyl((x0, y, z), d, x1 - x0, (1, 0, 0))
+    if flat > 0:   # D-hole: remove everything above the flat
+        c = c.cut(rbox(x0 - 1, y - d, z - d / 2 + flat, x1 + 1, y + d, z + d))
+    return c
+
+
+def slot_x(x0, x1, y, z, w, h, r):
+    """Rounded rectangular cutter running along X (through an end wall)."""
+    s = rbox(x0, y - w / 2, z - h / 2, x1, y + w / 2, z + h / 2)
+    if r > 0:
+        s = s.edges("|X").fillet(min(r, w / 2 - 0.01, h / 2 - 0.01))
+    return s
+
+
+def outline_2d(P, L, z0, z1):
+    """Outer body: rounded rectangle plus the external screw lugs."""
+    w = P["wall"]
+    L_in, W_in = L["L_in"], L["W_in"]
+    body = rbox(-w, -w, z0, L_in + w, W_in + w, z1, P["corner_r"] + w)
+    r = P["lug_r"]
+    for (lx, ly) in L["lugs"]:
+        body = body.union(cyl_z(lx, ly, z0, z1, 2 * r))
+        # fill between the lug and the wall so the lug is not a lone cylinder
+        fx0, fx1 = (lx, 0.0) if lx < 0 else ((L_in, lx) if lx > L_in else (lx - r, lx + r))
+        fy0, fy1 = (ly, 0.0) if ly < 0 else ((W_in, ly) if ly > W_in else (ly - r, ly + r))
+        if lx < 0 or lx > L_in:
+            body = body.union(rbox(min(fx0, fx1), ly - r, z0, max(fx0, fx1), ly + r, z1))
+        if ly < 0 or ly > W_in:
+            body = body.union(rbox(lx - r, min(fy0, fy1), z0, lx + r, max(fy0, fy1), z1))
+    return body
+
+
+# --------------------------------------------------------------------------
+# Base
+# --------------------------------------------------------------------------
+def make_base(P, L):
+    w, f = P["wall"], P["floor"]
+    L_in, W_in, H_in = L["L_in"], L["W_in"], L["H_in"]
+
+    base = outline_2d(P, L, -f, H_in)
+    cavity = rbox(0, 0, 0, L_in, W_in, H_in + 1, P["corner_r"])
+    base = base.cut(cavity)
+
+    # gasket groove in the top of the wall
+    go, gw, gd = P["groove_offset"], P["groove_w"], P["groove_depth"]
+    g_out = rbox(-(go + gw / 2), -(go + gw / 2), H_in - gd, L_in + go + gw / 2, W_in + go + gw / 2, H_in + 1,
+                 P["corner_r"] + go + gw / 2)
+    g_in = rbox(-(go - gw / 2), -(go - gw / 2), H_in - gd - 1, L_in + go - gw / 2, W_in + go - gw / 2, H_in + 2,
+                P["corner_r"] + go - gw / 2)
+    base = base.cut(g_out.cut(g_in))
+
+    # lid screw pilot holes in the lugs
+    for (lx, ly) in L["lugs"]:
+        base = base.cut(cyl_z(lx, ly, H_in - P["lug_hole_depth"], H_in + 1, P["lug_hole"]))
+
+    # external mounting tabs at floor level
+    if P["tab_hole"] > 0:
+        for fr in P["tab_pos"]:
+            tx = fr * L_in
+            for (y0, y1, hy) in ((-w - P["tab_out"], -w + 1, -w - P["tab_out"] / 2),
+                                 (W_in + w - 1, W_in + w + P["tab_out"], W_in + w + P["tab_out"] / 2)):
+                tab = rbox(tx - P["tab_len"] / 2, y0, -f, tx + P["tab_len"] / 2, y1, -f + P["tab_t"], 2.0)
+                tab = tab.cut(cyl_z(tx, hy, -f - 1, 5, P["tab_hole"]))
+                base = base.union(tab)
+
+    # PCB standoffs
+    for (hx, hy) in L["holes"]:
+        base = base.union(cyl_z(hx, hy, 0, P["standoff_h"], P["standoff_d"]))
+        base = base.union(
+            cq.Workplane("XY", origin=(hx, hy, 0)).circle(P["standoff_flare_d"] / 2)
+            .workplane(offset=P["standoff_flare_h"]).circle(P["standoff_d"] / 2).loft())
+        base = base.cut(cyl_z(hx, hy, P["standoff_h"] - P["standoff_hole_depth"],
+                              P["standoff_h"] + 1, P["standoff_hole"]))
+
+    # battery bay retaining ribs (three sides; +X side is open to the SMA bay)
+    bx0, by0, bx1, by1 = L["batt"]
+    t, h = P["batt_rib_t"], P["batt_rib_h"]
+    base = base.union(rbox(bx0 - t, by0 - 0.5, 0, bx1 + 0.01, by1 + t, h))
+    base = base.cut(rbox(bx0, by0 - 1, -1, bx1 + 1, by1, h + 1))
+    # short end stop at +X so the holder can't slide into the SMA bay, with a wire notch
+    base = base.union(rbox(bx1, by0 - 0.5, 0, bx1 + t, by1 + t, h))
+    base = base.cut(rbox(bx1 - 0.01, by0 + 6, -1, bx1 + t + 1, by1 - 6, h + 1))
+    if P["batt_screw_pitch"] > 0:
+        cx, cy = 0.5 * (bx0 + bx1), 0.5 * (by0 + by1)
+        for sx in (cx - P["batt_screw_pitch"] / 2, cx + P["batt_screw_pitch"] / 2):
+            base = base.cut(cyl_z(sx, cy, -f - 1, 1, 3.4))
+
+    # charger / boost module bay: low ribs all round, open at the corners for wires
+    mx0, my0, mx1, my1 = L["mod"]
+    t, h = P["mod_rib_t"], P["mod_rib_h"]
+    base = base.union(rbox(mx0 - t, my0 - t, 0, mx1 + t, my1 + t, h))
+    base = base.cut(rbox(mx0, my0, -1, mx1, my1, h + 1))
+    for (cx, cy) in ((mx0, my0), (mx1, my0), (mx0, my1), (mx1, my1)):
+        base = base.cut(rbox(cx - 4, cy - 4, -1, cx + 4, cy + 4, h + 1))
+
+    # ---- wall openings ----
+    # +X wall: SMA bulkhead
+    base = base.cut(cyl_x(L_in - 1, L_in + w + 1, L["sma_y"], P["sma_z"], P["sma_d"], P["sma_flat"]))
+    # +X wall: optional micro-USB opening for the breakout's own connector
+    if P["usb_mode"] in ("direct", "panel"):
+        base = base.cut(slot_x(L_in - 1, L_in + w + 1, L["usb_y"], L["usb_z"],
+                               P["usb_cut_w"], P["usb_cut_h"], P["usb_cut_r"]))
+    if P["usb_mode"] == "panel":
+        for sy in (L["usb_y"] - P["usb_panel_screw_pitch"] / 2, L["usb_y"] + P["usb_panel_screw_pitch"] / 2):
+            base = base.cut(cyl_x(L_in - 1, L_in + w + 1, sy, L["usb_z"], P["usb_panel_screw_d"]))
+    # -X wall: charge jack and switch
+    base = base.cut(cyl_x(-w - 1, 1, L["charge_y"], P["charge_z"], P["charge_d"]))
+    base = base.cut(cyl_x(-w - 1, 1, L["sw_y"], P["sw_z"], P["sw_d"]))
+    # -X wall: optional vent above the battery bay
+    if P["vent_d"] > 0:
+        base = base.cut(cyl_x(-w - 1, 1, L["vent_y"], P["vent_z"], P["vent_d"]))
+    return base
+
+
+# --------------------------------------------------------------------------
+# Lid
+# --------------------------------------------------------------------------
+def make_lid(P, L):
+    w = P["wall"]
+    L_in, W_in, H_in = L["L_in"], L["W_in"], L["H_in"]
+    z0 = H_in
+    lid = outline_2d(P, L, z0, z0 + P["lid_t"])
+    # locating lip inside the cavity
+    c = P["lip_clear"]
+    lip_o = rbox(c, c, z0 - P["lip_h"], L_in - c, W_in - c, z0, max(P["corner_r"] - c, 0.5))
+    lip_i = rbox(c + P["lip_t"], c + P["lip_t"], z0 - P["lip_h"] - 1,
+                 L_in - c - P["lip_t"], W_in - c - P["lip_t"], z0 + 1,
+                 max(P["corner_r"] - c - P["lip_t"], 0.5))
+    lid = lid.union(lip_o.cut(lip_i))
+    # screw holes with counterbores
+    for (lx, ly) in L["lugs"]:
+        lid = lid.cut(cyl_z(lx, ly, z0 - 1, z0 + P["lid_t"] + 1, P["lid_screw_d"]))
+        lid = lid.cut(cyl_z(lx, ly, z0 + P["lid_t"] - P["lid_cbore_depth"], z0 + P["lid_t"] + 1, P["lid_cbore_d"]))
+    # LED windows
+    for (lx, ly) in L["leds"]:
+        if P["led_window"] == "hole":
+            lid = lid.cut(cyl_z(lx, ly, z0 - 1, z0 + P["lid_t"] + 1, P["led_hole_d"]))
+        elif P["led_window"] == "thin":
+            lid = lid.cut(cyl_z(lx, ly, z0 - 1, z0 + P["lid_t"] - P["led_skin"], P["led_window_d"]))
+    return lid
+
+
+# --------------------------------------------------------------------------
+# Component keep-outs (fit report and preview)
+# --------------------------------------------------------------------------
+def make_keepouts(P, L):
+    g = GERBER
+    K = {}
+    x0, y0, x1, y1 = L["pcb_box"]
+    zb = P["standoff_h"]
+    pcb = rbox(x0, y0, zb, x1, y1, zb + P["pcb_t"], P["pcb_corner_r"])
+    for (hx, hy) in L["holes"]:
+        pcb = pcb.cut(cyl_z(hx, hy, zb - 1, zb + 3, P["hole_d"]))
+    K["breakout PCB"] = pcb
+    rc = 0.5 * (g["micro_rows"][0] + g["micro_rows"][1])
+    K["simpleRTK2B Micro"] = rbox(L["bx0"] + g["micro_y"][0], L["by0"] - rc - P["micro_w"] / 2, zb + P["pcb_t"],
+                                  L["bx0"] + g["micro_y"][1], L["by0"] - rc + P["micro_w"] / 2,
+                                  zb + P["pcb_t"] + P["micro_h"])
+    hc = 0.5 * (g["x_min"] + g["x_max"])
+    K["HC-05"] = rbox(L["bx0"] + g["hc05_y"][0], L["by0"] - hc - P["hc05_w"] / 2, zb - P["hc05_h"],
+                      L["bx0"] + g["hc05_y"][1], L["by0"] - hc + P["hc05_w"] / 2, zb)
+    if P["usb_mode"] != "none":
+        K["USB plug"] = rbox(L["usb_face_x"], L["usb_y"] - 5.5, L["usb_z"] - 3.75,
+                             L["L_in"] + P["wall"] + 20, L["usb_y"] + 5.5, L["usb_z"] + 3.75, 1.5)
+    bx0, by0, bx1, by1 = L["batt"]
+    K["18650 holder"] = rbox(bx0, by0, 0, bx1, by1, P["batt_h"])
+    mx0, my0, mx1, my1 = L["mod"]
+    K["charger/boost module"] = rbox(mx0, my0, 0, mx1, my1, P["mod_h"])
+    K["SMA jack"] = cyl_x(L["L_in"] - P["sma_body_len"], L["L_in"], L["sma_y"], P["sma_z"], 9.0)
+    K["charge jack"] = cyl_x(0, P["charge_body_depth"], L["charge_y"], P["charge_z"], P["charge_body_d"])
+    K["switch body"] = rbox(0, L["sw_y"] - P["sw_body_w"] / 2, P["sw_z"] - P["sw_body_h"] / 2,
+                            P["sw_body_depth"], L["sw_y"] + P["sw_body_w"] / 2, P["sw_z"] + P["sw_body_h"] / 2)
+    return K
+
+
+def vol(shape):
+    return shape.val().Volume() if shape.vals() else 0.0
+
+
+def fit_report(P, L, base, lid, K):
+    w = P["wall"]
+    lug_out = P["lug_e"] + P["lug_r"]
+    print("\n=== Layout ===")
+    print(f"cavity        : {L['L_in']:.1f} x {L['W_in']:.1f} x {L['H_in']:.1f} mm  (L x W x H)")
+    print(f"box body      : {L['L_in'] + 2 * w:.1f} x {L['W_in'] + 2 * w:.1f} x "
+          f"{L['H_in'] + P['floor'] + P['lid_t']:.1f} mm  (with lid)")
+    print(f"over the lugs : {L['L_in'] + 2 * lug_out:.1f} x {L['W_in'] + 2 * lug_out:.1f} mm")
+    x0, y0, x1, y1 = L["pcb_box"]
+    print(f"PCB           : X {x0:.2f}..{x1:.2f}  Y {y0:.2f}..{y1:.2f}  Z {P['standoff_h']:.1f}..{P['standoff_h'] + P['pcb_t']:.1f}")
+    print("standoffs     : " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in L["holes"]))
+    print(f"SMA           : +X wall, Y={L['sma_y']:.2f} Z={P['sma_z']:.2f}, d={P['sma_d']}")
+    print(f"micro-USB     : mode={P['usb_mode']}, +X wall, Y={L['usb_y']:.2f} Z={L['usb_z']:.2f}")
+    print(f"charge jack   : -X wall, Y={L['charge_y']:.2f} Z={P['charge_z']:.2f}, d={P['charge_d']}")
+    print(f"switch        : -X wall, Y={L['sw_y']:.2f} Z={P['sw_z']:.2f}, d={P['sw_d']}")
+    print(f"module bay    : X {L['mod'][0]:.1f}..{L['mod'][2]:.1f}  Y {L['mod'][1]:.1f}..{L['mod'][3]:.1f}")
+    print(f"battery bay   : X {L['batt'][0]:.1f}..{L['batt'][2]:.1f}  Y {L['batt'][1]:.1f}..{L['batt'][3]:.1f}")
+    print("LED windows   : " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in L["leds"]))
+    print("lid screws    : " + ", ".join(f"({x:.1f},{y:.1f})" for x, y in L["lugs"]))
+    import math
+    go, rc = P["groove_offset"], P["corner_r"] + P["groove_offset"]
+    cord = 2 * (L["L_in"] + 2 * go) + 2 * (L["W_in"] + 2 * go) - (8 - 2 * math.pi) * rc
+    print(f"gasket cord   : {P['cord_d']} mm cord, groove {P['groove_w']} x {P['groove_depth']} mm, "
+          f"centre-line length {cord:.0f} mm (cut ~{cord + 5:.0f} mm)")
+
+    print("\n=== Fit check (keep-out volume intersecting the printed parts, mm^3) ===")
+    ok = True
+    names = list(K)
+    for n in names:
+        vb, vl = vol(base.intersect(K[n])), vol(lid.intersect(K[n]))
+        flag = "ok " if (vb + vl) < 0.01 else "CLASH"
+        ok &= flag == "ok "
+        print(f"  {flag}  {n:22s} base {vb:8.2f}   lid {vl:8.2f}")
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            v = vol(K[a].intersect(K[b]))
+            if v > 0.01:
+                ok = False
+                print(f"  CLASH  {a} <-> {b}: {v:.2f}")
+    print("  component-to-component: " + ("no clashes" if ok else "see above"))
+    return ok
+
+
+# --------------------------------------------------------------------------
+# Preview drawings: 2D cross-sections (matplotlib, headless)
+# --------------------------------------------------------------------------
+def _slice(shape, axis, at, thick=0.2):
+    big = 500
+    if axis == "z":
+        slab = rbox(-big, -big, at - thick / 2, big, big, at + thick / 2)
+    elif axis == "y":
+        slab = rbox(-big, at - thick / 2, -big, big, at + thick / 2, big)
+    else:
+        slab = rbox(at - thick / 2, -big, -big, at + thick / 2, big, big)
+    return shape.intersect(slab)
+
+
+def _draw(ax, shape, color, alpha, axis):
+    from matplotlib.patches import Polygon
+    if not shape.vals():
+        return
+    for solid in shape.solids().vals():
+        verts, tris = solid.tessellate(0.1, 0.3)
+        pts = [(p.x, p.y) if axis == "z" else ((p.x, p.z) if axis == "y" else (p.y, p.z)) for p in verts]
+        for t in tris:
+            ax.add_patch(Polygon([pts[i] for i in t], closed=True, facecolor=color,
+                                 edgecolor=color, linewidth=0.3, alpha=alpha))
+
+
+def section_png(path, title, axis, at, parts, xlabel, ylabel):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(12, 8), dpi=110)
+    for shape, color, alpha in parts:
+        _draw(ax, _slice(shape, axis, at), color, alpha, axis)
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+    ax.relim(); ax.autoscale()
+    ax.grid(True, linewidth=0.3)
+    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def render_all(P, L, base, lid, K, out):
+    colors = {
+        "breakout PCB": "#2a6fdb", "simpleRTK2B Micro": "#1b3f8f", "HC-05": "#2e8b57",
+        "USB plug": "#555555", "18650 holder": "#c0392b", "charger/boost module": "#8e44ad",
+        "SMA jack": "#d4a017", "charge jack": "#7f8c8d", "switch body": "#e67e22",
+    }
+    comp = [(K[n], colors[n], 0.55) for n in K]
+    grey = ("#404040", 1.0)
+    H = L["H_in"]
+    plans = [
+        ("plan_z0.png", "Plan section 0.3 mm above the floor: ribs, tabs, standoff flares", 0.3),
+        ("plan_z11.png", "Plan section at Z = 11 mm: wall openings, standoffs, component keep-outs", 11.0),
+        ("plan_groove.png", f"Plan section at Z = {H - 0.7:.1f} mm: gasket groove and screw lugs", H - 0.7),
+    ]
+    for fn, title, z in plans:
+        section_png(os.path.join(out, fn), title, "z", z, [(base, *grey)] + comp, "X (mm)", "Y (mm)")
+    section_png(os.path.join(out, "wall_plusX.png"), "+X end wall (viewed from outside is mirrored): SMA bulkhead" +
+                (", micro-USB" if P["usb_mode"] != "none" else ""), "x", L["L_in"] + P["wall"] / 2,
+                [(base, *grey)] + comp, "Y (mm)", "Z (mm)")
+    section_png(os.path.join(out, "wall_minusX.png"), "-X end wall: charge jack and switch", "x", -P["wall"] / 2,
+                [(base, *grey)] + comp, "Y (mm)", "Z (mm)")
+    section_png(os.path.join(out, "lid_plate.png"), "Lid section through the plate: screw holes and LED window pockets",
+                "z", H + 0.5, [(lid, *grey)], "X (mm)", "Y (mm)")
+    section_png(os.path.join(out, "lid_lip.png"), "Lid section just under the plate: locating lip",
+                "z", H - 0.5, [(lid, *grey)], "X (mm)", "Y (mm)")
+    section_png(os.path.join(out, "side_section.png"), f"Long section at Y = {L['sma_y']:.1f} mm through the battery bay and SMA",
+                "y", L["sma_y"], [(base, *grey), (lid, "#808080", 1.0)] + comp, "X (mm)", "Z (mm)")
+
+
+def main():
+    L = layout(P)
+    base = make_base(P, L)
+    lid = make_lid(P, L)
+    K = make_keepouts(P, L)
+    ok = fit_report(P, L, base, lid, K)
+
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), P["out_dir"])
+    os.makedirs(out, exist_ok=True)
+    cq.exporters.export(base, os.path.join(out, "rtk_enclosure_base.stl"), tolerance=P["stl_tol"])
+    cq.exporters.export(base, os.path.join(out, "rtk_enclosure_base.step"))
+    # lid STL is flipped so its flat top prints on the bed
+    lid_print = lid.rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, L["H_in"] + P["lid_t"]))
+    cq.exporters.export(lid_print, os.path.join(out, "rtk_enclosure_lid.stl"), tolerance=P["stl_tol"])
+    cq.exporters.export(lid, os.path.join(out, "rtk_enclosure_lid.step"))
+    for name, shp in (("base", base), ("lid (print orientation)", lid_print)):
+        bb = shp.val().BoundingBox()
+        print(f"{name:24s} STL extents: {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f} mm, z from {bb.zmin:.1f}")
+
+    render_all(P, L, base, lid, K, out)
+    print(f"\nwrote STL/STEP/PNG to {out}")
+    if not ok:
+        print("WARNING: clashes reported above")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

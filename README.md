@@ -28,6 +28,8 @@ mixer-scale-esp32/
 └── irrigator-system/
     ├── feedmix-t3/
     │   └── feedmix-t3.ino          # T3 cab display firmware (Arduino/PlatformIO)
+    ├── rtk-rover-enclosure/
+    │   └── rtk_enclosure.py        # Water-resistant printed box for the simpleRTK2B Micro rover (CadQuery)
     ├── pi-server/
     │   ├── app.py                  # Flask REST API
     │   ├── database.py             # SQLite schema + migrations
