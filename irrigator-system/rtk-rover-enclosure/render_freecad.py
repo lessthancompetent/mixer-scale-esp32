@@ -46,9 +46,9 @@ def named(*prefixes):
 
 
 lid, lid_screws = named("enclosure_lid"), named("lid_screw_")
-pipe = named("pvc_pipe")
+pipe = named("pvc_pipe", "antenna_")
 cap_side = named("clamp_cap", "clamp_bolt_")            # comes off downwards in the exploded view
-mount = named("clamp_", "pvc_pipe")
+mount = named("clamp_", "pvc_pipe", "antenna_")
 home = {o.Name: o.Placement for o in shapes}
 
 
@@ -91,6 +91,7 @@ state()
 shot("render_closed_sma_end.png", (-1.0, 0.8, -0.7))
 shot("render_closed_switch_end.png", (1.0, 0.8, -0.7))
 shot("render_back_pipe_clamp.png", (-1.0, 0.7, 0.9))
+shot("render_pole_antenna.png", (-0.6, 1.0, -0.5))
 state(lid_alpha=75, mount_on=False)
 shot("render_lid_transparent.png", (-1.0, 0.8, -0.7))
 state(lid_on=False, mount_on=False)
@@ -101,3 +102,21 @@ state(explode=True)
 shot("render_exploded.png", (-1.0, 0.8, -0.45))
 state()
 _view_prefs.SetBool("UseNavigationAnimations", _anim)
+
+# helical-antenna variant (python3 rtk_assembly.py helical), pole view only
+HEL = os.path.join(OUT, "rtk_rover_assembly_helical.step")
+if os.path.exists(HEL):
+    _view_prefs.SetBool("UseNavigationAnimations", False)
+    if DOC + "_helical" in FreeCAD.listDocuments():
+        FreeCAD.closeDocument(DOC + "_helical")
+    hdoc = FreeCAD.newDocument(DOC + "_helical")
+    ImportGui.insert(HEL, hdoc.Name)
+    hdoc.recompute()
+    for o in hdoc.Objects:
+        if o.TypeId == "App::Origin":
+            o.ViewObject.Visibility = False
+        elif o.isDerivedFrom("Part::Feature"):
+            o.ViewObject.DisplayMode = "Shaded"
+    view = FreeCADGui.getDocument(hdoc.Name).ActiveView
+    shot("render_pole_helical.png", (-0.6, 1.0, -0.5))
+    _view_prefs.SetBool("UseNavigationAnimations", _anim)

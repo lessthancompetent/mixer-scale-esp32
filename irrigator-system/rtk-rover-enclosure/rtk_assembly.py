@@ -25,8 +25,9 @@ import sys
 
 import cadquery as cq
 
-from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, gxy, layout, make_base, make_lid,
-                           make_pipe_clamp, rbox, vol)
+from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, gxy, layout, make_antenna_mount,
+                           make_helical_cap,
+                           make_base, make_lid, make_pipe_clamp, rbox, vol)
 from rtk_enclosure import gbox as _gbox
 
 COLORS = {
@@ -259,8 +260,30 @@ def make_mockups(P, L):
         saddle, cap = make_pipe_clamp(P, L, od)
         M["clamp_saddle"] = (saddle, "clamp")
         M["clamp_cap"] = (cap, "clamp")
-        M["pvc_pipe"] = (cyl_x(D["xc"] - 110, D["xc"] + 110, D["yc"], D["zc"], od)
-                         .cut(cyl_x(D["xc"] - 111, D["xc"] + 111, D["yc"], D["zc"], od - 4.0)), "pvc")
+        x_top = D["xc"] + 150.0                   # top of the pole is the +X (antenna) end
+        M["pvc_pipe"] = (cyl_x(D["xc"] - 110, x_top, D["yc"], D["zc"], od)
+                         .cut(cyl_x(D["xc"] - 111, x_top + 1, D["yc"], D["zc"], od - 4.0)), "pvc")
+
+        def on_pole(shape):                       # mount-local Z (pipe axis) -> enclosure +X at the pipe end
+            return shape.rotate((0, 0, 0), (0, 1, 0), 90).translate((x_top, D["yc"], D["zc"]))
+        tt, gt = P["ant_tray_t"], P["ant_gp_t"]
+        al, aw, ah = P["ant_size"]
+        if P["antenna"] == "helical":
+            top = P["hel_chamber_h"] + P["hel_top_t"]
+            hd, hh = P["hel_size"]
+            M["antenna_mount"] = (on_pole(make_helical_cap(P, od)), "clamp")
+            sma = cyl_z(0, 0, top - 12.0, top + 9.0, 6.35).union(cyl_z(0, 0, top - 6.0, top - 4.0 - 0.01, 9.0))
+            M["antenna_sma_bulkhead"] = (on_pole(sma.cut(cyl_z(0, 0, top + 3.0, top + 10.0, 4.2))), "gold")
+            nut = cq.Workplane("XY", origin=(0, 0, top)).polygon(6, 8.0 / 0.8660254).extrude(2.2)
+            M["antenna_sma_nut"] = (on_pole(nut.cut(cyl_z(0, 0, top - 1, top + 3, 6.4))), "gold")
+            ant = cyl_z(0, 0, top + 2.2, top + 10.0, 9.5).cut(cyl_z(0, 0, top + 2.0, top + 9.2, 6.5))
+            ant = ant.union(cyl_z(0, 0, top + 10.0, top + 10.0 + hh, hd).faces(">Z").edges().fillet(8.0))
+            M["antenna_helical"] = (on_pole(ant), "plastic_white")
+        else:
+            M["antenna_mount"] = (on_pole(make_antenna_mount(P, od)), "clamp")
+            M["antenna_ground_plane"] = (on_pole(cyl_z(0, 0, tt, tt + gt, P["ant_gp_d"])), "metal")
+            M["antenna_ann_mb"] = (on_pole(rbox(-al / 2, -aw / 2, tt + gt, al / 2, aw / 2, tt + gt + ah, 12.0)
+                                           .faces(">Z").edges().fillet(6.0)), "plastic_black")
         zh = D["z_cap"] - P["clamp_plate_t"]
         for i, (bx, by) in enumerate(D["bolts"]):
             M[f"clamp_bolt_{i + 1}"] = (cyl_z(bx, by, zh - 4.0, zh, 7.0).union(cyl_z(bx, by, zh, zh + 20.0, 4.0)), "steel_dark")
@@ -311,13 +334,15 @@ def build_assembly(base, lid, M):
 
 
 def main():
+    if len(sys.argv) > 1:
+        P["antenna"] = sys.argv[1]             # e.g.  python3 rtk_assembly.py helical
     L = layout(P)
     base, lid = make_base(P, L), make_lid(P, L)
     M = make_mockups(P, L)
     ok = check(P, L, base, lid, M)
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), P["out_dir"])
     os.makedirs(out, exist_ok=True)
-    path = os.path.join(out, "rtk_rover_assembly.step")
+    path = os.path.join(out, "rtk_rover_assembly.step" if P["antenna"] == "ann_mb" else f"rtk_rover_assembly_{P['antenna']}.step")
     build_assembly(base, lid, M).export(path)
     print(f"\nwrote {path}  ({len(M) + 2} parts)")
     if not ok:

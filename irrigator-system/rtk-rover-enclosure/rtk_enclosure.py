@@ -87,6 +87,22 @@ P = dict(
     clamp_nut_af=7.2, clamp_nut_seat=8.0,        # M4 nut pocket; seat height above the parting face
     clamp_screw_d=3.4, clamp_cbore_d=6.2, clamp_cbore_depth=3.0,
 
+    # ---- antenna mount for the top of the pipe (u-blox ANN-MB on a metal ground plane) ----
+    ant_gp_d=120.0,      # metal ground-plane disc; u-blox characterise the ANN-MB on 120-150 mm
+    ant_gp_t=1.5,        # disc thickness (steel, so the antenna's magnets hold it)
+    ant_tray_t=3.0,      # printed tray under the disc
+    ant_sleeve_len=35.0, ant_sleeve_wall=4.0,
+    ant_slot=3.0,        # pinch slot in the sleeve
+    ant_ear_w=6.0, ant_ear_len=13.0, ant_ear_h=16.0,   # pinch-clamp ears, one M4 x 25 + nut
+    ant_ribs=5, ant_rib_t=3.0,
+    ant_disc_screw_r=50.0, ant_disc_screw_d=2.5,       # 3 x M3 self-tappers through the disc (optional)
+    ant_size=(82.0, 60.0, 22.5),                        # ANN-MB body, for the mock-up
+    antenna="ann_mb",    # which antenna the assembly/renders show: "ann_mb" or "helical"
+    # helical antenna cap: SMA bulkhead (female-female, or the bulkhead end of an extension lead)
+    # through the top, cable leaves by a side window just above the pipe end
+    hel_top_t=4.0, hel_sma_d=6.5, hel_chamber_h=18.0, hel_window_w=11.0, hel_window_h=13.0,
+    hel_size=(28.0, 60.0),                              # helical antenna dia x height, for the mock-up
+
     # ---- breakout board (from gerbers) ---------------------------------------
     pcb_len=38.25,       # along enclosure X (gerber Y)
     pcb_w=31.90,         # along enclosure Y (gerber X)
@@ -477,6 +493,82 @@ def make_pipe_clamp(P, L, od):
 
 
 # --------------------------------------------------------------------------
+# Antenna mount for the top of the pipe
+# --------------------------------------------------------------------------
+def _ear_wedge(P, r_in, r_out, z0):
+    """Ramp from the pinch ears up to the sleeve so they print without support (parts print upside-down)."""
+    ew, el, eh, s = P["ant_ear_w"], P["ant_ear_len"], P["ant_ear_h"], P["ant_slot"]
+    zt = z0 + eh
+    return (cq.Workplane("XZ").polyline([(r_in + 1, zt), (r_out + el, zt), (r_in + 1, zt + el - 2.0)]).close()
+            .extrude(s / 2 + ew, both=True))
+
+
+def make_antenna_mount(P, od):
+    """Pinch-clamp socket for the pipe end with a flat tray for a metal ground-plane disc.
+
+    Local frame: Z is the pipe axis, the pipe end butts against the tray underside at Z = 0,
+    the sleeve hangs below, the tray top (where the disc goes) is at Z = ant_tray_t.
+    The pinch slot and ears point along +X.
+    """
+    import math
+    r_in = od / 2 + 0.2
+    r_out = r_in + P["ant_sleeve_wall"]
+    sl, tt, R = P["ant_sleeve_len"], P["ant_tray_t"], P["ant_gp_d"] / 2
+    m = cyl_z(0, 0, 0, tt, 2 * R).union(cyl_z(0, 0, -sl, 0, 2 * r_out))
+    # ribs from the sleeve out under the tray, none on the slot side
+    n = P["ant_ribs"]
+    for i in range(n):
+        a = 360.0 / (n + 1) * (i + 1)
+        rib = (cq.Workplane("XZ").polyline([(r_out - 1, 0), (R - 8, 0), (r_out - 1, -sl + 6)]).close()
+               .extrude(P["ant_rib_t"] / 2, both=True).rotate((0, 0, 0), (0, 0, 1), a))
+        m = m.union(rib)
+    # pinch ears near the open end of the sleeve
+    ew, el, eh, s = P["ant_ear_w"], P["ant_ear_len"], P["ant_ear_h"], P["ant_slot"]
+    z0 = -sl + 3
+    m = m.union(rbox(r_in + 1, -(s / 2 + ew), z0, r_out + el, s / 2 + ew, z0 + eh))
+    m = m.union(_ear_wedge(P, r_in, r_out, z0))
+    m = m.cut(cyl_z(0, 0, -sl - 1, 0, 2 * r_in))
+    m = m.cut(rbox(0, -s / 2, -sl - 1, r_out + el + 1, s / 2, -4))          # slot stops 4 mm under the tray
+    bx, bz = r_out + el / 2 + 1, z0 + eh / 2
+    m = m.cut(cyl((bx, -(s / 2 + ew) - 1, bz), 4.4, s + 2 * ew + 2, (0, 1, 0)))
+    m = m.cut(cq.Workplane("XZ", origin=(bx, -(s / 2 + ew) + 3.0, bz)).polygon(6, 7.2 / 0.8660254).extrude(4))  # M4 nut
+    for i in range(3):
+        a = math.radians(60 + 120 * i)
+        m = m.cut(cyl_z(P["ant_disc_screw_r"] * math.cos(a), P["ant_disc_screw_r"] * math.sin(a), -1, tt + 1,
+                        P["ant_disc_screw_d"]))
+    return m
+
+
+def make_helical_cap(P, od):
+    """Pipe-top cap for a helical (drone-type) antenna: no ground plane needed.
+
+    Same pinch-clamp sleeve as the ANN-MB mount. Above the pipe end there is a small
+    chamber for the back of an SMA bulkhead fitted through the top; the cable leaves
+    through a side window (opposite the pinch slot) and runs down the outside of the pole.
+    Local frame as make_antenna_mount: pipe end at Z = 0, pipe axis = Z.
+    """
+    r_in = od / 2 + 0.2
+    r_out = r_in + P["ant_sleeve_wall"]
+    sl, ch, tt = P["ant_sleeve_len"], P["hel_chamber_h"], P["hel_top_t"]
+    m = cyl_z(0, 0, -sl, ch + tt, 2 * r_out)
+    ew, el, eh, s = P["ant_ear_w"], P["ant_ear_len"], P["ant_ear_h"], P["ant_slot"]
+    z0 = -sl + 3
+    m = m.union(rbox(r_in + 1, -(s / 2 + ew), z0, r_out + el, s / 2 + ew, z0 + eh))
+    m = m.union(_ear_wedge(P, r_in, r_out, z0))
+    m = m.faces(">Z").edges().fillet(2.0)
+    m = m.cut(cyl_z(0, 0, -sl - 1, 0, 2 * r_in))
+    m = m.cut(cyl_z(0, 0, -1, ch, 2 * (r_in - 2.5)))                          # chamber; the step is the pipe stop
+    m = m.cut(cyl_z(0, 0, ch - 1, ch + tt + 1, P["hel_sma_d"]))
+    m = m.cut(rbox(-r_out - 1, -P["hel_window_w"] / 2, 1.0, 0, P["hel_window_w"] / 2, 1.0 + P["hel_window_h"], 0)
+              .edges("|X").fillet(3.0))
+    m = m.cut(rbox(0, -s / 2, -sl - 1, r_out + el + 1, s / 2, -4))
+    bx, bz = r_out + el / 2 + 1, z0 + eh / 2
+    m = m.cut(cyl((bx, -(s / 2 + ew) - 1, bz), 4.4, s + 2 * ew + 2, (0, 1, 0)))
+    m = m.cut(cq.Workplane("XZ", origin=(bx, -(s / 2 + ew) + 3.0, bz)).polygon(6, 7.2 / 0.8660254).extrude(4))
+    return m
+
+
+# --------------------------------------------------------------------------
 # Component keep-outs (fit report and preview)
 # --------------------------------------------------------------------------
 def make_keepouts(P, L):
@@ -657,6 +749,16 @@ def main():
             shp = shp.rotate((0, 0, 0), (1, 0, 0), 180)
             shp = shp.translate((0, 0, -shp.val().BoundingBox().zmin))
             cq.exporters.export(shp, os.path.join(out, f"pipe_clamp_{nm}_{tag}.stl"), tolerance=P["stl_tol"])
+        mount = make_antenna_mount(P, od)
+        cq.exporters.export(mount, os.path.join(out, f"antenna_mount_{tag}.step"))
+        mount = mount.rotate((0, 0, 0), (1, 0, 0), 180)       # tray face down on the bed, sleeve up
+        mount = mount.translate((0, 0, -mount.val().BoundingBox().zmin))
+        cq.exporters.export(mount, os.path.join(out, f"antenna_mount_{tag}.stl"), tolerance=P["stl_tol"])
+        hcap = make_helical_cap(P, od)
+        cq.exporters.export(hcap, os.path.join(out, f"helical_cap_{tag}.step"))
+        hcap = hcap.rotate((0, 0, 0), (1, 0, 0), 180)         # flat top on the bed
+        hcap = hcap.translate((0, 0, -hcap.val().BoundingBox().zmin))
+        cq.exporters.export(hcap, os.path.join(out, f"helical_cap_{tag}.stl"), tolerance=P["stl_tol"])
     for name, shp in (("base", base), ("lid (print orientation)", lid_print)):
         bb = shp.val().BoundingBox()
         print(f"{name:24s} STL extents: {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f} mm, z from {bb.zmin:.1f}")

@@ -23,6 +23,7 @@ files and the drawings live in `out/`.
 | `out/plan_z11.png` | plan view at mid height: wall holes, standoffs, component keep-outs |
 | `out/plan_z0.png` | floor: battery and module bay ribs, clamp-screw bosses |
 | `out/pipe_clamp_saddle_od*.stl`, `out/pipe_clamp_cap_od*.stl` / `.step` | pipe clamp, one pair per pipe size (see *Pipe clamp*) |
+| `out/antenna_mount_od*.stl`, `out/helical_cap_od*.stl` / `.step` | pipe-top antenna mounts (see *Antenna on top of the pipe*) |
 | `out/plan_groove.png` | gasket groove and screw pillars |
 | `out/wall_plusX.png`, `out/wall_minusX.png` | the two end walls |
 | `out/side_section.png` | long section through battery bay, SMA jack and lid |
@@ -219,6 +220,42 @@ Measure the pipe and print the matching pair, or put any other OD in
 `pipe_variants`. Print both parts as exported (saddle plate down, cap
 parting face down), 4+ perimeters, no supports.
 
+## Antenna on top of the pipe
+
+![ANN-MB on its ground plane](out/render_pole_antenna.png)
+![helical antenna cap](out/render_pole_helical.png)
+
+Both mounts use the same pinch-clamp socket over the pipe end (one M4 x 25 +
+nut), both come in the two pipe sizes, and both print upside-down (flat face
+on the bed) without supports.
+
+**u-blox ANN-MB: `antenna_mount_od*.stl`.** The ANN-MB is a patch antenna and
+does need a ground plane: u-blox quote its gain on a 150 mm disc and measure
+its phase centre on a 120 mm one, and without metal under it the L2 gain,
+multipath rejection and phase-centre stability all suffer. The mount is a
+120 mm printed tray (`ant_gp_d`) with ribs under it. Stick a **120 mm x 1.5 mm
+steel disc** on it with VHB tape (three Ø2.5 pilot holes are there for M3
+self-tappers through the disc if you prefer); on steel the antenna's own
+magnets hold it, centred on the disc. Aluminium works equally well electrically
+but then the antenna has to be taped or screwed down. Coil the ANN-MB's 5 m
+lead and tie it to the pole; do not cut it unless you can re-terminate RG174.
+
+**Helical (drone-type) antenna: `helical_cap_od*.stl`.** A multiband quad-helix
+needs no ground plane, weighs ~30 g instead of ~170 g + disc, and keeps the
+pole top slim, which suits a walking pole. The cap takes an SMA
+female-female bulkhead (or the bulkhead end of an SMA extension lead) through
+a Ø6.5 hole in its top; the cable leaves through the side window just above
+the pipe end and runs down the outside to the box. Compared with a patch on a
+proper ground plane a helix gives a little less gain and multipath rejection
+near buildings and under trees, but in open paddocks the F9P fixes just as
+readily.
+
+Whichever you use, enter the pole height to the antenna's reference point in
+SW Maps (instrument height), not to the top of the pipe.
+
+`python3 rtk_assembly.py helical` writes the assembly with the helical
+antenna instead (`out/rtk_rover_assembly_helical.step`).
+
 ## Parts list
 
 Already on hand: simpleRTK2B Micro (ZED-F9P), the WildBuckwheat breakout PCB
@@ -228,7 +265,8 @@ To buy:
 
 | Qty | Part | Notes |
 |-----|------|-------|
-| 1 | GNSS antenna with SMA lead | multiband L1/L2 to suit the F9P, if not already on hand |
+| 1 | GNSS antenna | u-blox ANN-MB-00 (SMA) **plus** a 120 mm x 1.5 mm steel disc and VHB tape; or a multiband L1/L2 helical antenna (SMA male) **plus** an SMA female-female bulkhead adapter and an SMA male-male lead the length of the pole |
+| 1 | M4 x 25 bolt + nut | antenna mount pinch clamp |
 | 1 | **right-angle SMA-male to SMA-female bulkhead** pigtail, RG174 (or RG316), 75-100 mm | for the SMA Micro. Bulkhead end: 1/4-36 thread with nut, washer and O-ring; Ø6.5 hole. The run is ~60 mm; spare cable loops over the charger module. (U.FL Micro: U.FL to SMA bulkhead, 1.13 mm cable, 100-150 mm) |
 | 1 | 18650 holder with wire leads, ~77 x 20.5 x 15 mm | pocket is 78.5 x 21.5 |
 | 1 | 18650 cell, protected | 3000-3500 mAh should run the F9P + HC-05 (~0.7 W) for roughly 12 h |
