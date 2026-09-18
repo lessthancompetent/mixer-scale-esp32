@@ -1,7 +1,9 @@
 // Effluent Pump Module — ESP32 DevKit + SX1276 LoRa
 // Reads 230V pump state via optocoupler isolation module
-// Broadcasts PUMP_ON / PUMP_OFF over LoRa to irrigator + Pi server
-// Listens for PUMP_CUTOFF from the irrigator and trips a relay to stop the pump
+// Broadcasts PUMP_ON / PUMP_OFF over LoRa to the irrigator beacon + Pi server
+// Receives GPS positions from the irrigator beacon, answers each one with the
+// pump state, and decides for itself when the irrigator has stalled
+// (../common/stall_detector.h). On a stall it trips a relay to stop the pump.
 //
 // Optocoupler wiring (pump sense):
 //   AC side  → across 230V pump contactor coil or motor terminals
@@ -17,6 +19,8 @@
 
 #include <SPI.h>
 #include <LoRa.h>
+#include "protocol.h"
+#include "stall_detector.h"
 
 // ── Pin definitions ──────────────────────────────────────────────────────────
 #define LORA_SS   5
@@ -35,26 +39,22 @@
 #define RELAY_CUT_LEVEL  HIGH   // drive this to ENERGISE relay = open NC = cut
 #define RELAY_RUN_LEVEL  LOW    // de-energise relay = NC closed = pump runs
 
-// ── LoRa config ──────────────────────────────────────────────────────────────
-#define LORA_FREQ  915E6   // AU/NZ — change to 868E6 for EU
-#define LORA_SF    9
-#define LORA_BW    125E3
-#define LORA_CR    5
-
-// ── Device IDs (must match irrigator-module and lora_bridge) ─────────────────
-#define DEVICE_ID_PUMP      0x01
-#define DEVICE_ID_IRRIGATOR 0x02
-
-// ── Packet types ─────────────────────────────────────────────────────────────
-#define MSG_PUMP_ON         0x10
-#define MSG_PUMP_OFF        0x11
-#define MSG_HEARTBEAT       0x20
-#define MSG_PUMP_CUTOFF     0x50   // From irrigator: payload 1=cut, 0=release
+// ── Stall detection (tune after the first field runs) ────────────────────────
+// The [env:bench] build in platformio.ini shortens grace + window for desk tests.
+#ifndef STALL_GRACE_MS
+#define STALL_GRACE_MS      900000UL  // 15min pump-on grace before any cutoff
+#endif
+#ifndef STALL_WINDOW_MS
+#define STALL_WINDOW_MS     300000UL  // movement judged across 5min
+#endif
+#define STALL_THRESH_M      3.0       // < 3m across the window = stalled
+#define STALL_REPEAT_MS     60000UL   // repeat the alert while pump still runs
 
 // ── Debounce — motors can bounce on start/stop ───────────────────────────────
 #define DEBOUNCE_MS         2000UL    // 2s
 #define HEARTBEAT_MS        300000UL  // 5min
 #define TX_RETRIES          3
+#define REPLY_DELAY_MS      40UL      // let the beacon get into receive first
 
 // The contactor uses a seal-in (start/stop) starter, so a momentary break of
 // the coil circuit drops it out and it stays off until manually restarted.
@@ -67,26 +67,50 @@ bool         lastRaw       = false;
 bool         debouncing    = false;
 unsigned long debounceStart = 0;
 unsigned long lastHeartbeat = 0;
+unsigned long lastStallAlert = 0;
 
 // Latches true once we have pulsed the cutoff for the current stall event.
 // Cleared only when the pump is sensed running again (i.e. manually restarted),
 // so a single stall produces a single cut and never auto-restarts the pump.
 bool         cutLatched    = false;
 
+StallDetector stallDetector;
+
+StallConfig stallConfig() {
+  StallConfig c;
+  c.graceMs  = STALL_GRACE_MS;
+  c.windowMs = STALL_WINDOW_MS;
+  c.threshM  = STALL_THRESH_M;
+  return c;
+}
+
 // ── LoRa send with retry ──────────────────────────────────────────────────────
-void sendPacket(uint8_t msgType, uint8_t payload = 0) {
+bool sendRaw(const uint8_t *buf, int len) {
   for (int attempt = 0; attempt < TX_RETRIES; attempt++) {
     LoRa.beginPacket();
-    LoRa.write(DEVICE_ID_PUMP);
-    LoRa.write(msgType);
-    LoRa.write(payload);
-    if (LoRa.endPacket()) {
-      Serial.printf("[TX] type=0x%02X payload=%d\n", msgType, payload);
-      return;
-    }
+    LoRa.write(buf, len);
+    if (LoRa.endPacket()) return true;
     delay(150 * (attempt + 1));
   }
   Serial.println("[TX] Failed after retries");
+  return false;
+}
+
+void sendPacket(uint8_t msgType, uint8_t payload = 0) {
+  uint8_t buf[3] = { DEVICE_ID_PUMP, msgType, payload };
+  if (sendRaw(buf, sizeof(buf))) {
+    Serial.printf("[TX] type=0x%02X payload=%d\n", msgType, payload);
+  }
+}
+
+// Alert-style packet carrying the irrigator's last known position. The Pi
+// logs MSG_ALERT_STALL as STALL and MSG_PUMP_CUTOFF as KICKOUT.
+void sendPosPacket(uint8_t msgType) {
+  double lat, lon;
+  if (!stallDetector.lastPosition(lat, lon)) { sendPacket(msgType, 0); return; }
+  uint8_t buf[POS_PACKET_LEN];
+  int len = protoEncodePos(buf, DEVICE_ID_PUMP, msgType, lat, lon);
+  if (sendRaw(buf, len)) Serial.printf("[TX] type=0x%02X with position\n", msgType);
 }
 
 // ── Cutoff relay ──────────────────────────────────────────────────────────────
@@ -104,17 +128,54 @@ void pulseCutoff() {
   cutLatched = true;
 }
 
-// ── Listen for cutoff command from the irrigator module ──────────────────────
+// ── Incoming LoRa: beacon positions (and the legacy cutoff command) ──────────
 void checkIncoming() {
   int pktSize = LoRa.parsePacket();
   if (pktSize < 2) return;
 
   uint8_t srcId   = LoRa.read();
   uint8_t msgType = LoRa.read();
-  while (LoRa.available()) LoRa.read();   // drain any GPS payload
+  uint8_t payload[16];
+  int len = 0;
+  while (LoRa.available()) {
+    uint8_t b = LoRa.read();
+    if (len < (int)sizeof(payload)) payload[len++] = b;
+  }
 
-  if (srcId == DEVICE_ID_IRRIGATOR && msgType == MSG_PUMP_CUTOFF) {
+  if (srcId != DEVICE_ID_IRRIGATOR) return;
+
+  if (msgType == MSG_GPS_POSITION) {
+    GpsReport r;
+    if (protoDecodeGps(payload, len, r)) {
+      stallDetector.addSample(r.lat, r.lon, millis());
+      Serial.printf("[RX] beacon %.6f, %.6f  batt=%d%%  rssi=%d\n",
+                    r.lat, r.lon, r.battPct, LoRa.packetRssi());
+    }
+  }
+
+  if (msgType == MSG_GPS_POSITION || msgType == MSG_HEARTBEAT) {
+    delay(REPLY_DELAY_MS);
+    sendPacket(MSG_PUMP_STATE, pumpRunning ? 1 : 0);
+  } else if (msgType == MSG_PUMP_CUTOFF) {
+    // Legacy irrigator-module firmware decides the stall itself
     if (!cutLatched) pulseCutoff();   // one pulse per stall; ignore refreshes
+  }
+}
+
+// ── Stall handling ────────────────────────────────────────────────────────────
+void checkStall(unsigned long now) {
+  if (!pumpRunning || !stallDetector.isStalled(now)) return;
+
+  if (!cutLatched) {
+    Serial.println("[STALL] Irrigator not travelling — cutting pump");
+    sendPosPacket(MSG_ALERT_STALL);
+    pulseCutoff();
+    sendPosPacket(MSG_PUMP_CUTOFF);
+    lastStallAlert = millis();
+  } else if (now - lastStallAlert >= STALL_REPEAT_MS) {
+    // Relay pulsed but the pump is still sensed running — keep shouting
+    lastStallAlert = now;
+    sendPosPacket(MSG_ALERT_STALL);
   }
 }
 
@@ -128,17 +189,19 @@ void setup() {
   setRelay(false);
 
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
-  if (!LoRa.begin(LORA_FREQ)) {
+  if (!LoRa.begin(PROTO_LORA_FREQ_HZ)) {
     Serial.println("[LoRa] Init FAILED — halting");
     while (true) delay(1000);
   }
-  LoRa.setSpreadingFactor(LORA_SF);
-  LoRa.setSignalBandwidth(LORA_BW);
-  LoRa.setCodingRate4(LORA_CR);
+  LoRa.setSpreadingFactor(PROTO_LORA_SF);
+  LoRa.setSignalBandwidth(PROTO_LORA_BW_HZ);
+  LoRa.setCodingRate4(PROTO_LORA_CR);
 
   // Read initial state so we don't send a spurious packet on boot
   lastRaw      = (digitalRead(PUMP_SENSE_PIN) == LOW);
   pumpRunning  = lastRaw;
+  stallDetector = StallDetector(stallConfig());
+  stallDetector.setPump(pumpRunning, millis());
 
   Serial.printf("[BOOT] Pump module ready — pump initially %s\n",
                 pumpRunning ? "ON" : "OFF");
@@ -149,8 +212,8 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // Listen for stall cutoff commands from the irrigator module
   checkIncoming();
+  checkStall(now);
 
   bool raw = (digitalRead(PUMP_SENSE_PIN) == LOW); // LOW = pump on
 
@@ -166,6 +229,7 @@ void loop() {
     debouncing = false;
     if (raw != pumpRunning) {
       pumpRunning = raw;
+      stallDetector.setPump(pumpRunning, now);
       sendPacket(pumpRunning ? MSG_PUMP_ON : MSG_PUMP_OFF, 0);
       Serial.printf("[PUMP] %s\n", pumpRunning ? "ON" : "OFF");
       // Pump sensed running again = manual restart after a cutoff → re-arm
