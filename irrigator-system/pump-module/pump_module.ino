@@ -173,9 +173,13 @@ void checkStall(unsigned long now) {
     sendPosPacket(MSG_PUMP_CUTOFF);
     lastStallAlert = millis();
   } else if (now - lastStallAlert >= STALL_REPEAT_MS) {
-    // Relay pulsed but the pump is still sensed running — keep shouting
+    // Relay pulsed but the pump is still sensed running (contactor may not
+    // have dropped out, or was manually reset) — keep shouting and pulse
+    // the relay again. pulseCutoff() re-sets cutLatched = true, which is
+    // already the case here, so this is harmless to repeat.
     lastStallAlert = now;
     sendPosPacket(MSG_ALERT_STALL);
+    pulseCutoff();
   }
 }
 
@@ -196,6 +200,11 @@ void setup() {
   LoRa.setSpreadingFactor(PROTO_LORA_SF);
   LoRa.setSignalBandwidth(PROTO_LORA_BW_HZ);
   LoRa.setCodingRate4(PROTO_LORA_CR);
+  // Reject bit-flipped packets at the edge of range instead of feeding a
+  // corrupt lat/lon into the stall detector's averages. Explicit-header mode
+  // carries CRC presence in the header, so this is still compatible with any
+  // unmodified receiver and with legacy senders that transmit without CRC.
+  LoRa.enableCrc();
 
   // Read initial state so we don't send a spurious packet on boot
   lastRaw      = (digitalRead(PUMP_SENSE_PIN) == LOW);
@@ -213,7 +222,10 @@ void loop() {
   unsigned long now = millis();
 
   checkIncoming();
-  checkStall(now);
+  // checkIncoming() may have just stamped a new sample with a later
+  // millis() than `now`; use a fresh timestamp so isStalled() doesn't
+  // underflow comparing against a sample newer than `now`.
+  checkStall(millis());
 
   bool raw = (digitalRead(PUMP_SENSE_PIN) == LOW); // LOW = pump on
 
