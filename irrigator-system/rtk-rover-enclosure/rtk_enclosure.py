@@ -107,6 +107,21 @@ P = dict(
     hel_top_t=4.0, hel_sma_d=6.5, hel_chamber_h=18.0, hel_window_w=11.0, hel_window_h=13.0,
     hel_size=(28.0, 60.0),                              # helical antenna dia x height, for the mock-up
 
+    # ---- phone holder on the pole -------------------------------------------------
+    phone_w=88.0, phone_l=176.0,
+    phone_t=12.0,        # thickness INCLUDING its case: measure it
+    phone_tilt=45.0,     # screen tilt back from vertical, deg (45 = square-on to your eyes at chest height)
+    phone_arm=88.0,      # pole axis to the cradle centre; keeps the phone's top edge clear of the pole
+    phone_attach=80.0,   # bracket centre, measured up from the bottom of the phone
+    phone_plate_l=150.0, phone_plate_t=3.0, phone_wall=3.0, phone_clear=0.6,
+    phone_rail_l=70.0,   # side rails run this far up from the bottom (below the side buttons)
+    phone_lip=2.5,       # how far the rails reach over the front of the phone
+    phone_corner_lip=16.0,   # bottom lips at the two corners only: the gesture bar and USB port stay clear
+    phone_port_w=26.0,   # gap in the bottom ledge for a charging cable
+    phone_face=(50.0, 44.0),         # bracket face: along the phone x across
+    phone_screw_pitch=(36.0, 28.0),  # 4 x M3 countersunk, cradle to bracket
+    phone_clamp_len=40.0,
+
     # ---- breakout board (from gerbers) ---------------------------------------
     pcb_len=38.25,       # along enclosure X (gerber Y)
     pcb_w=31.90,         # along enclosure Y (gerber X)
@@ -598,6 +613,89 @@ def make_survey_cap(P, od):
 
 
 # --------------------------------------------------------------------------
+# Phone holder: cradle + tilted bracket + clamp cap
+# --------------------------------------------------------------------------
+def phone_frame(P):
+    """Unit vectors in the mount frame (pipe axis = Z, phone towards +X): screen normal n, up-the-phone u."""
+    import math
+    t = math.radians(P["phone_tilt"])
+    return (math.cos(t), 0.0, math.sin(t)), (-math.sin(t), 0.0, math.cos(t))
+
+
+def make_phone_cradle(P):
+    """Cradle in its print frame: back face on Z = 0, +X is DOWN the phone, Y across, origin = bracket centre."""
+    w, pt, c = P["phone_w"] + 2 * P["phone_clear"], P["phone_t"], P["phone_clear"]
+    t, wl, lip = P["phone_plate_t"], P["phone_wall"], P["phone_lip"]
+    xb = P["phone_attach"]                      # inner face of the bottom ledge
+    H = t + pt + c + lip                         # top of the rails
+    m = rbox(xb - P["phone_plate_l"], -(w / 2 + wl), 0, xb + wl, w / 2 + wl, t, 4.0)
+    m = m.union(rbox(xb, -(w / 2 + wl), 0, xb + wl, w / 2 + wl, H))                       # bottom ledge
+    for sy in (-1, 1):
+        y0, y1 = sorted((sy * w / 2, sy * (w / 2 + wl)))
+        m = m.union(rbox(xb - P["phone_rail_l"], y0, 0, xb + wl, y1, H))                    # side rail
+        # rail lip: triangular section so it prints without support
+        tri = (cq.Workplane("YZ", origin=(xb - P["phone_rail_l"], 0, 0))
+               .polyline([(sy * w / 2, H), (sy * (w / 2 - lip), H), (sy * w / 2, H - lip)]).close()
+               .extrude(P["phone_rail_l"] + wl))
+        m = m.union(tri)
+        # bottom corner lip
+        ya, yb_ = sorted((sy * (w / 2 - P["phone_corner_lip"]), sy * w / 2))
+        tri = (cq.Workplane("XZ", origin=(0, yb_, 0))
+               .polyline([(xb, H), (xb - lip, H), (xb, H - lip)]).close().extrude(yb_ - ya))
+        m = m.union(tri)
+    m = m.cut(rbox(xb - 1, -P["phone_port_w"] / 2, t, xb + wl + 1, P["phone_port_w"] / 2, H + 1))   # charge port
+    px, py = P["phone_screw_pitch"]
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            x, y = sx * px / 2, sy * py / 2
+            m = m.cut(cyl_z(x, y, -1, t + 1, 3.4))
+            m = m.cut(cq.Workplane("XY").add(cq.Solid.makeCone(1.7, 3.3, 1.7, cq.Vector(x, y, t - 1.7), cq.Vector(0, 0, 1))))
+    return m
+
+
+def phone_place(P, shape):
+    """Cradle print frame -> mount frame (pipe axis Z, phone towards +X)."""
+    return shape.rotate((0, 0, 0), (0, 1, 0), 90.0 - P["phone_tilt"]).translate((P["phone_arm"], 0, 0))
+
+
+def make_phone_bracket(P, od):
+    """Bracket (half clamp + arm with the tilted face) and clamp cap. Mount frame: pipe axis = Z."""
+    n, u = phone_frame(P)
+    g, hl = P["clamp_gap"] / 2, P["phone_clamp_len"] / 2
+    hw = od / 2 + P["clamp_flange"]
+    xs = od / 2 + 10.0
+    by = od / 2 + P["clamp_bolt_off"]
+    bz = hl - 8.0
+    fl, fw = P["phone_face"]
+    d = P["phone_arm"]
+    top, bot = (d + fl / 2 * u[0], fl / 2 * u[2]), (d - fl / 2 * u[0], -fl / 2 * u[2])
+    prof = [(xs - 1, hl), top, bot, (xs - 1, -hl)]
+    arm = cq.Workplane("XZ").polyline(prof).close().extrude(fw / 2, both=True)
+    arm = arm.cut(cq.Workplane("XZ").polyline(prof).close().offset2D(-7.0).extrude(fw, both=True))   # lightening window
+    br = rbox(g, -hw, -hl, xs, hw, hl, 3.0).union(arm)
+    bore = cyl_z(0, 0, -hl - 1, hl + 1, od + 0.4)
+    br = br.cut(bore)
+    for sy in (-1, 1):
+        for sz in (-1, 1):
+            br = br.cut(cyl((0, sy * by, sz * bz), P["clamp_bolt_d"], xs - 1.5, (1, 0, 0)))
+            ya, yb_ = sorted((sy * (by - 3.7), sy * (hw + 1)))
+            br = br.cut(rbox(g + 8.0, ya, sz * bz - 3.6, g + 11.4, yb_, sz * bz + 3.6))      # side-entry M4 nut slot
+    px, py = P["phone_screw_pitch"]
+    for sa in (-1, 1):
+        for sb in (-1, 1):
+            p = (d + sa * px / 2 * u[0] + 0.5 * n[0], sb * py / 2, sa * px / 2 * u[2] + 0.5 * n[2])
+            br = br.cut(cyl(p, 2.5, 10.0, (-n[0], 0, -n[2])))                                # M3 thread-forming
+
+    cap = rbox(-g - P["clamp_plate_t"], -hw, -hl, -g, hw, hl, 2.0)
+    cap = cap.union(cyl_z(0, 0, -hl, hl, od + 0.4 + 2 * P["clamp_ring_t"]))
+    cap = cap.cut(rbox(-g, -hw - 1, -hl - 1, od, hw + 1, hl + 1)).cut(bore)
+    for sy in (-1, 1):
+        for sz in (-1, 1):
+            cap = cap.cut(cyl((-g - P["clamp_plate_t"] - 1, sy * by, sz * bz), P["clamp_bolt_d"], P["clamp_plate_t"] + 2, (1, 0, 0)))
+    return br, cap
+
+
+# --------------------------------------------------------------------------
 # Component keep-outs (fit report and preview)
 # --------------------------------------------------------------------------
 def make_keepouts(P, L):
@@ -770,8 +868,16 @@ def main():
     lid_print = lid.rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, L["H_in"] + P["lid_t"]))
     cq.exporters.export(lid_print, os.path.join(out, "rtk_enclosure_lid.stl"), tolerance=P["stl_tol"])
     cq.exporters.export(lid, os.path.join(out, "rtk_enclosure_lid.step"))
+    cq.exporters.export(make_phone_cradle(P), os.path.join(out, "phone_cradle.stl"), tolerance=P["stl_tol"])
+    cq.exporters.export(make_phone_cradle(P), os.path.join(out, "phone_cradle.step"))
     for od in P["pipe_variants"]:
         tag = f"od{od:g}".replace(".", "p")
+        br, pcap = make_phone_bracket(P, od)
+        for nm, shp, axis, ang in (("phone_bracket", br, (1, 0, 0), 90), ("phone_clamp_cap", pcap, (0, 1, 0), 90)):
+            cq.exporters.export(shp, os.path.join(out, f"{nm}_{tag}.step"))
+            shp = shp.rotate((0, 0, 0), axis, ang)      # bracket on its side; cap parting face down
+            shp = shp.translate((0, 0, -shp.val().BoundingBox().zmin))
+            cq.exporters.export(shp, os.path.join(out, f"{nm}_{tag}.stl"), tolerance=P["stl_tol"])
         for nm, shp in zip(("saddle", "cap"), make_pipe_clamp(P, L, od)):
             cq.exporters.export(shp, os.path.join(out, f"pipe_clamp_{nm}_{tag}.step"))
             # STL flipped: saddle plate / cap parting face down on the bed

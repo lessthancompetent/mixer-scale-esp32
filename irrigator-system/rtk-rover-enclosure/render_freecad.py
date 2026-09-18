@@ -48,7 +48,7 @@ def named(*prefixes):
 lid, lid_screws = named("enclosure_lid"), named("lid_screw_")
 pipe = named("pvc_pipe", "antenna_")
 cap_side = named("clamp_cap", "clamp_bolt_")            # comes off downwards in the exploded view
-mount = named("clamp_", "pvc_pipe", "antenna_")
+mount = named("clamp_", "pvc_pipe", "antenna_", "phone")
 home = {o.Name: o.Placement for o in shapes}
 
 
@@ -69,7 +69,7 @@ def state(lid_on=True, mount_on=True, explode=False, lid_alpha=0):
         o.ViewObject.Transparency = lid_alpha
 
 
-def shot(name, direction):
+def shot(name, direction, up=(0, 0, 1)):
     """direction = the way the camera looks, in model coordinates."""
     view.setCameraType("Orthographic")
     if direction == "top":
@@ -77,7 +77,7 @@ def shot(name, direction):
     else:
         # camera looks along its local -Z with local +Y up; keep model +Z up
         z = FreeCAD.Vector(*direction).negative().normalize()
-        x = FreeCAD.Vector(0, 0, 1).cross(z).normalize()
+        x = FreeCAD.Vector(*up).cross(z).normalize()
         view.setCameraOrientation(FreeCAD.Rotation(x, z.cross(x), z, "ZXY"))
     view.fitAll()
     FreeCADGui.updateGui()
@@ -92,6 +92,7 @@ shot("render_closed_sma_end.png", (-1.0, 0.8, -0.7))
 shot("render_closed_switch_end.png", (1.0, 0.8, -0.7))
 shot("render_back_pipe_clamp.png", (-1.0, 0.7, 0.9))
 shot("render_pole_antenna.png", (-0.6, 1.0, -0.5))
+shot("render_pole_upright.png", (-0.35, 0.8, 1.0), up=(1, 0, 0))      # pole vertical, seen from the user's side
 state(lid_alpha=75, mount_on=False)
 shot("render_lid_transparent.png", (-1.0, 0.8, -0.7))
 state(lid_on=False, mount_on=False)
@@ -104,7 +105,7 @@ state()
 _view_prefs.SetBool("UseNavigationAnimations", _anim)
 
 # other antenna variants (python3 rtk_assembly.py helical | survey), pole view only
-for variant in ("helical", "survey"):
+for variant in globals().get("VARIANTS", ("helical", "survey")):
     HEL = os.path.join(OUT, f"rtk_rover_assembly_{variant}.step")
     if not os.path.exists(HEL):
         continue

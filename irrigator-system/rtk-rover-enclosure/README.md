@@ -24,6 +24,7 @@ files and the drawings live in `out/`.
 | `out/plan_z0.png` | floor: battery and module bay ribs, clamp-screw bosses |
 | `out/pipe_clamp_saddle_od*.stl`, `out/pipe_clamp_cap_od*.stl` / `.step` | pipe clamp, one pair per pipe size (see *Pipe clamp*) |
 | `out/antenna_mount_od*.stl`, `out/helical_cap_od*.stl`, `out/survey_cap_od*.stl` / `.step` | pipe-top antenna mounts (see *Antenna on top of the pipe*) |
+| `out/phone_cradle.stl`, `out/phone_bracket_od*.stl`, `out/phone_clamp_cap_od*.stl` / `.step` | phone holder (see *Phone holder*) |
 | `out/plan_groove.png` | gasket groove and screw pillars |
 | `out/wall_plusX.png`, `out/wall_minusX.png` | the two end walls |
 | `out/side_section.png` | long section through battery bay, SMA jack and lid |
@@ -277,6 +278,31 @@ SW Maps (instrument height), not to the top of the pipe.
 `python3 rtk_assembly.py helical` (or `survey`) writes the assembly with that
 antenna instead (`out/rtk_rover_assembly_helical.step`, `..._survey.step`).
 
+## Phone holder
+
+![whole pole](out/render_pole_upright.png)
+
+Three printed parts, for an 88 x 176 mm phone (`phone_w`, `phone_l`):
+
+* `phone_cradle.stl`: back plate with a bottom ledge and two 70 mm side rails.
+  The phone slides in from the top and sits on the ledge; the rail lips and two
+  small corner lips keep it in when you tap. The lips only reach 2.5 mm over
+  the glass, the middle of the bottom edge is open for the gesture bar, and
+  there is a 26 mm gap in the ledge for a charging cable. Prints flat, back
+  down, no supports (the lips are triangular underneath).
+* `phone_bracket_od*.stl`: half clamp plus an arm with a **45 degree** face
+  (`phone_tilt`), so at chest height the screen is square-on to your eyes with
+  the pole held vertical. The arm puts the cradle centre 88 mm from the pole
+  axis (`phone_arm`), which is what it takes for the top of a 176 mm phone to
+  lean back without touching the pipe. Prints lying on its side.
+* `phone_clamp_cap_od*.stl`: other half of the clamp, 4 x M4 x 25 into nuts
+  that slide into slots in the sides of the bracket.
+
+The cradle screws to the bracket with 4 x M3 x 10 countersunk thread-forming
+screws from the front (heads sit flush under the phone). **Set `phone_t` to the
+phone's thickness in its case before printing**; the default is 12 mm. Mount it
+on the opposite side of the pole from the receiver box, at about chest height.
+
 ## Parts list
 
 Already on hand: simpleRTK2B Micro (ZED-F9P), the WildBuckwheat breakout PCB
@@ -301,6 +327,8 @@ To buy:
 | 4 | M3 x 6 pan-head screws | breakout to standoffs |
 | 4 | M3 x 10 pan-head screws | clamp saddle to the back of the box |
 | 4 | M4 x 20 bolts + 4 M4 nuts (+ washers) | pipe clamp; stainless for outdoors |
+| 4 | M4 x 25 bolts + 4 M4 nuts | phone holder clamp |
+| 4 | M3 x 10 countersunk screws | phone cradle to bracket |
 | ~1 m | 24 AWG silicone hook-up wire, red + black; heat-shrink | |
 | | double-sided foam tape | holder and module |
 | | filament: PETG or ASA, ~120 g | base, lid, clamp; 0.2 mm layers, 4+ perimeters |

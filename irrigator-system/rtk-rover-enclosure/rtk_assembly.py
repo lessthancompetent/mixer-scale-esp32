@@ -26,7 +26,7 @@ import sys
 import cadquery as cq
 
 from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, gxy, layout, make_antenna_mount,
-                           make_helical_cap, make_survey_cap,
+                           make_helical_cap, make_phone_bracket, make_phone_cradle, make_survey_cap, phone_place,
                            make_base, make_lid, make_pipe_clamp, rbox, vol)
 from rtk_enclosure import gbox as _gbox
 
@@ -261,8 +261,22 @@ def make_mockups(P, L):
         M["clamp_saddle"] = (saddle, "clamp")
         M["clamp_cap"] = (cap, "clamp")
         x_top = D["xc"] + 150.0                   # top of the pole is the +X (antenna) end
-        M["pvc_pipe"] = (cyl_x(D["xc"] - 110, x_top, D["yc"], D["zc"], od)
-                         .cut(cyl_x(D["xc"] - 111, x_top + 1, D["yc"], D["zc"], od - 4.0)), "pvc")
+        x_phone = D["xc"] - 190.0                 # phone holder below the box, on the far side of the pole from it
+        M["pvc_pipe"] = (cyl_x(x_phone - 110, x_top, D["yc"], D["zc"], od)
+                         .cut(cyl_x(x_phone - 111, x_top + 1, D["yc"], D["zc"], od - 4.0)), "pvc")
+
+        def at_phone(shape):                      # mount frame (pipe axis Z, phone +X) -> pole along +X, phone towards -Z
+            return shape.rotate((0, 0, 0), (0, 1, 0), 90).translate((x_phone, D["yc"], D["zc"]))
+        br, pcap = make_phone_bracket(P, od)
+        M["phone_bracket"] = (at_phone(br), "clamp")
+        M["phone_clamp_cap"] = (at_phone(pcap), "clamp")
+        M["phone_cradle"] = (at_phone(phone_place(P, make_phone_cradle(P))), "clamp")
+        xb, t, c = P["phone_attach"], P["phone_plate_t"], P["phone_clear"]
+        ph = rbox(xb - c - P["phone_l"], -P["phone_w"] / 2, t, xb - c, P["phone_w"] / 2, t + P["phone_t"] - 2.0, 9.0)
+        M["phone"] = (at_phone(phone_place(P, ph)), "plastic_black")
+        scr = rbox(xb - c - P["phone_l"] + 4, -P["phone_w"] / 2 + 3, t + P["phone_t"] - 2.0,
+                   xb - c - 4, P["phone_w"] / 2 - 3, t + P["phone_t"] - 1.6, 7.0)
+        M["phone_screen"] = (at_phone(phone_place(P, scr)), "pcb_blue")
 
         def on_pole(shape):                       # mount-local Z (pipe axis) -> enclosure +X at the pipe end
             return shape.rotate((0, 0, 0), (0, 1, 0), 90).translate((x_top, D["yc"], D["zc"]))
