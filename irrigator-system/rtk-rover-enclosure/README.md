@@ -377,6 +377,7 @@ To buy:
 | 1 | mini toggle switch MTS-102 (SPDT, 6 mm bush) + silicone boot | Ø6.2 hole; or set `sw_d = 12.2` for a 12 mm IP67 latching push button |
 | 1 | GX12 2-pin panel socket + line plug + dust cap, or IP67 5.5 x 2.1 DC jack | Ø12.2 hole, 5 V charge input |
 | 1 | Schottky diode 1N5819 / SS14 | optional, see wiring |
+| 2 | 3 mm high-brightness LEDs (green, blue), 1 kΩ + 330 Ω + 10 kΩ resistors, BC557 or 2N3906 | status LEDs in the lid, see *Status LEDs* |
 | ~0.4 m | Ø2.0 mm silicone O-ring cord + cyanoacrylate | lid gasket, 356 mm cut length |
 | 6 | M3 x 10 button-head screws | lid; thread-forming into Ø2.5 holes (or Ø4.0 holes + M3 heat-set inserts: `lug_hole = 4.0`) |
 | 4 | M3 x 6 pan-head screws | breakout to standoffs |
@@ -411,6 +412,48 @@ is happy down to ~4.5 V, so the 0.3 V diode drop is fine.
 
 Bluetooth: solder the HC-05 to the breakout's bottom header as in the
 breakout's README. Plastic does not block 2.4 GHz.
+
+## Status LEDs (power and RTK)
+
+The breakout has its own PWR and RTK LEDs, but with the SMA Micro the board is
+turned round and they end up **under the Micro's SMA jack**, so the lid windows
+over them are dropped in that layout (they are still cut for `micro_ant = "ufl"`).
+
+Instead the lid has two **blind pockets for 3 mm LEDs** above the charger
+module, labelled `PWR` and `RTK` on the outside (`status_leds`). The pocket
+stops 0.6 mm short of the outer face: in white or light-coloured PETG the LED
+glows clearly through that skin, and the lid stays sealed with no hole or glue
+line. Push the LED up into the pocket and fix it with a blob of hot glue. Use
+high-brightness LEDs; for a dark filament set `status_led_skin = 0` for a
+through hole and seal the LED in with clear epoxy.
+
+The box sits on the far side of the pole from the phone; rotate it a quarter
+turn round the pole so the lid faces your left or right and the LEDs are in view.
+
+Wiring (leave ~60 mm of flying lead so the lid can come off):
+
+```
+PWR  green LED:  module 5 V OUT ──[1 kΩ]──►|── GND
+
+RTK  blue LED, lit = RTK FIXED (recommended: PNP inverter, BC557 / 2N3906)
+
+     breakout 3V3 ────────────── emitter
+     breakout RTK_STAT pad ─[10 kΩ]─ base
+                                 collector ──[330 Ω]──►|── GND
+```
+
+The breakout's README gives the sense of its own RTK LED: **on = no
+corrections, blinking = float, off = RTK fixed**, i.e. the F9P's `RTK_STAT` pin
+is high with no RTK and low when fixed. Driving a LED straight from it would
+copy that (light *off* when all is well, which also looks like a flat battery),
+so the PNP turns it over: **off = no corrections, blinking = float, steady =
+fixed**. `RTK_STAT` is among the Micro I/O pads broken out along the side of the
+breakout; check the label against the schematic PDF in the breakout's repo
+before soldering. Without the transistor: `RTK_STAT` pad ─[1 kΩ]─►|─ GND gives
+the same behaviour as the on-board LED.
+
+The HC-05 also has its own LED (fast blink = waiting, slow double blink =
+connected) which shows faintly through a light-coloured base.
 
 ## Assembly
 

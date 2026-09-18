@@ -229,6 +229,14 @@ def make_mockups(P, L):
         s = cyl_z(hx, hy, zt, zt + 2.0, 5.6).union(cyl_z(hx, hy, zt - 6.0, zt, 3.0))
         M[f"board_screw_{i + 1}"] = (s, "steel_dark")
 
+    # ---- status LEDs in the lid pockets -----------------------------------------------------------
+    for (sx, sy), n, c in zip(L["status_leds"], ("pwr", "rtk"), ("led_green", "led_red")):
+        ztop = L["H_in"] + P["lid_t"] - P["status_led_skin"]
+        led = cyl_z(sx, sy, ztop - 4.4, ztop - 1.5, 3.0).union(
+            cq.Workplane("XY").add(cq.Solid.makeSphere(1.5, cq.Vector(sx, sy, ztop - 1.5))))
+        led = led.union(cyl_z(sx, sy, ztop - 5.4, ztop - 4.4, 3.9))
+        M[f"status_led_{n}"] = (led, c)
+
     # ---- power wiring (see the README wiring diagram) ---------------------------------------------
     dm = 0.5 * (L["div"][0] + L["div"][1])        # wires run on top of the divider rib, under the PCB
     xl = 16.5                                     # lane between the jack/switch bodies and the module

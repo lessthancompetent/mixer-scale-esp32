@@ -204,8 +204,18 @@ P = dict(
     vent_z=17.5,
 
     # ---- LED windows in the lid above PWR/RTK ---------------------------------
+    # Windows over the breakout's own PWR/RTK LEDs. Only useful with micro_ant="ufl": with the SMA
+    # Micro the board is turned and those LEDs sit under the SMA jack, so they are skipped there.
     led_window="thin",   # "thin" (0.8 mm skin, back-fill with clear resin), "hole", "none"
     led_window_d=4.0, led_skin=0.8, led_hole_d=2.0,
+
+    # ---- status LEDs: two 3 mm LEDs pushed up into blind pockets in the lid ----------------
+    # A 0.6 mm skin of light-coloured PETG glows clearly and keeps the lid sealed (no hole, no glue
+    # line to leak). They sit over the charger module, where there is 15 mm of free height.
+    status_leds=True,
+    status_led_d=3.2, status_led_skin=0.6,
+    status_led_pitch=9.0,
+    status_led_labels=("PWR", "RTK"), status_label_h=3.5, status_label_depth=0.4,
 
     out_dir="out",
     stl_tol=0.05,
@@ -275,7 +285,7 @@ def layout(P):
     L["usb_y"] = gxy(L, *g["usb"])[1]
     L["usb_z"] = P["standoff_h"] + P["pcb_t"] + P["usb_center_above_pcb"]
     L["usb_face_x"] = gxy(L, 0, g["usb_face_y"])[0]
-    L["leds"] = [gxy(L, gx, gy) for gx, gy in g["leds"]]
+    L["leds"] = [] if flip else [gxy(L, gx, gy) for gx, gy in g["leds"]]
 
     # -X end wall: charge jack low in the row, switch high in the row
     L["charge_y"] = row_pcb[0] + 0.5 + P["charge_body_d"] / 2
@@ -291,6 +301,10 @@ def layout(P):
         L["sma_y"], L["sma_z"] = 0.5 * (row_batt[0] + row_batt[1]) + 1.0, P["sma_z"]
     L["vent_y"] = 0.5 * (row_batt[0] + row_batt[1])
 
+    # status LEDs over the charger module, clear of the Micro's SMA plug
+    mcx_, mcy_ = 0.5 * (L["mod"][0] + L["mod"][2]), 0.5 * (L["mod"][1] + L["mod"][3])
+    L["status_leds"] = ([(mcx_ - 4.0, mcy_ + s * P["status_led_pitch"] / 2) for s in (1, -1)]
+                        if P["status_leds"] else [])
     e = P["lug_inset"] - P["wall"]
     lugs = [(e, e), (L["L_in"] - e, e), (e, L["W_in"] - e), (L["L_in"] - e, L["W_in"] - e)]
     if P["mid_lugs"]:
@@ -473,6 +487,17 @@ def make_lid(P, L):
     for (lx, ly) in L["lugs"]:
         lid = lid.cut(cyl_z(lx, ly, z0 - 1, z0 + P["lid_t"] + 1, P["lid_screw_d"]))
         lid = lid.cut(cyl_z(lx, ly, z0 + P["lid_t"] - P["lid_cbore_depth"], z0 + P["lid_t"] + 1, P["lid_cbore_d"]))
+    # status LED pockets (blind, from the inside) with debossed labels on the outside
+    for (sx, sy), label in zip(L["status_leds"], P["status_led_labels"]):
+        top = z0 + P["lid_t"]
+        lid = lid.cut(cyl_z(sx, sy, z0 - 1, top - P["status_led_skin"], P["status_led_d"]))
+        if label and P["status_label_depth"] > 0:
+            try:
+                txt = (cq.Workplane("XY", origin=(sx + 3.5, sy, top - P["status_label_depth"]))
+                       .text(label, P["status_label_h"], P["status_label_depth"] + 0.1, halign="left", valign="center"))
+                lid = lid.cut(txt)
+            except Exception as err:                       # no usable font: the pockets still work
+                print(f"status LED label '{label}' skipped: {err}")
     # LED windows
     for (lx, ly) in L["leds"]:
         if P["led_window"] == "hole":
@@ -825,7 +850,9 @@ def fit_report(P, L, base, lid, K):
     print(f"switch        : -X wall, Y={L['sw_y']:.2f} Z={P['sw_z']:.2f}, d={P['sw_d']}")
     print(f"module bay    : X {L['mod'][0]:.1f}..{L['mod'][2]:.1f}  Y {L['mod'][1]:.1f}..{L['mod'][3]:.1f}")
     print(f"battery bay   : X {L['batt'][0]:.1f}..{L['batt'][2]:.1f}  Y {L['batt'][1]:.1f}..{L['batt'][3]:.1f}")
-    print("LED windows   : " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in L["leds"]))
+    print("LED windows   : " + (", ".join(f"({x:.2f},{y:.2f})" for x, y in L["leds"]) or "none (board LEDs are under the SMA jack)"))
+    print("status LEDs   : " + ", ".join(f"({x:.1f},{y:.1f})" for x, y in L["status_leds"]) +
+          f"  3 mm LEDs in blind lid pockets, {P['status_led_skin']} mm skin")
     print("lid screws    : " + ", ".join(f"({x:.1f},{y:.1f})" for x, y in L["lugs"]))
     cord = cavity_offset(P, L, P["groove_offset"]).vals()[0].Length()
     print(f"gasket cord   : {P['cord_d']} mm cord, groove {P['groove_w']} x {P['groove_depth']} mm, "
