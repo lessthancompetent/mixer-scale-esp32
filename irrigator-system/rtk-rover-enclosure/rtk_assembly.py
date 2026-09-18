@@ -26,7 +26,7 @@ import sys
 import cadquery as cq
 
 from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, gxy, layout, make_antenna_mount,
-                           make_helical_cap,
+                           make_helical_cap, make_survey_cap,
                            make_base, make_lid, make_pipe_clamp, rbox, vol)
 from rtk_enclosure import gbox as _gbox
 
@@ -268,7 +268,16 @@ def make_mockups(P, L):
             return shape.rotate((0, 0, 0), (0, 1, 0), 90).translate((x_top, D["yc"], D["zc"]))
         tt, gt = P["ant_tray_t"], P["ant_gp_t"]
         al, aw, ah = P["ant_size"]
-        if P["antenna"] == "helical":
+        if P["antenna"] == "survey":
+            hp, top = P["srv_hex_h"], P["srv_hex_h"] + P["srv_top_t"]
+            sd, sh = P["srv_size"]
+            M["antenna_mount"] = (on_pole(make_survey_cap(P, od)), "clamp")
+            bolt = cq.Workplane("XY", origin=(0, 0, 0.2)).polygon(6, 23.8 / 0.8660254).extrude(hp - 0.4)
+            M["antenna_bolt_5_8"] = (on_pole(bolt.union(cyl_z(0, 0, hp - 0.2, top + 14.0, 15.9))), "metal")
+            body = cyl_z(0, 0, top, top + 18.0, 46.0).union(cyl_z(0, 0, top + 18.0, top + 40.0, sd))
+            body = body.union(cyl_z(0, 0, top + 40.0, top + sh, sd - 30.0).faces(">Z").edges().fillet(15.0))
+            M["antenna_survey_k700"] = (on_pole(body.cut(cyl_z(0, 0, top - 1, top + 15.0, 16.0))), "plastic_white")
+        elif P["antenna"] == "helical":
             top = P["hel_chamber_h"] + P["hel_top_t"]
             hd, hh = P["hel_size"]
             M["antenna_mount"] = (on_pole(make_helical_cap(P, od)), "clamp")

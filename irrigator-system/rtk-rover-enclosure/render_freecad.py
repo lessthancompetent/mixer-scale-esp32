@@ -103,13 +103,15 @@ shot("render_exploded.png", (-1.0, 0.8, -0.45))
 state()
 _view_prefs.SetBool("UseNavigationAnimations", _anim)
 
-# helical-antenna variant (python3 rtk_assembly.py helical), pole view only
-HEL = os.path.join(OUT, "rtk_rover_assembly_helical.step")
-if os.path.exists(HEL):
+# other antenna variants (python3 rtk_assembly.py helical | survey), pole view only
+for variant in ("helical", "survey"):
+    HEL = os.path.join(OUT, f"rtk_rover_assembly_{variant}.step")
+    if not os.path.exists(HEL):
+        continue
     _view_prefs.SetBool("UseNavigationAnimations", False)
-    if DOC + "_helical" in FreeCAD.listDocuments():
-        FreeCAD.closeDocument(DOC + "_helical")
-    hdoc = FreeCAD.newDocument(DOC + "_helical")
+    if DOC + "_" + variant in FreeCAD.listDocuments():
+        FreeCAD.closeDocument(DOC + "_" + variant)
+    hdoc = FreeCAD.newDocument(DOC + "_" + variant)
     ImportGui.insert(HEL, hdoc.Name)
     hdoc.recompute()
     for o in hdoc.Objects:
@@ -118,5 +120,5 @@ if os.path.exists(HEL):
         elif o.isDerivedFrom("Part::Feature"):
             o.ViewObject.DisplayMode = "Shaded"
     view = FreeCADGui.getDocument(hdoc.Name).ActiveView
-    shot("render_pole_helical.png", (-0.6, 1.0, -0.5))
+    shot(f"render_pole_{variant}.png", (-0.6, 1.0, -0.5))
     _view_prefs.SetBool("UseNavigationAnimations", _anim)

@@ -97,7 +97,11 @@ P = dict(
     ant_ribs=5, ant_rib_t=3.0,
     ant_disc_screw_r=50.0, ant_disc_screw_d=2.5,       # 3 x M3 self-tappers through the disc (optional)
     ant_size=(82.0, 60.0, 22.5),                        # ANN-MB body, for the mock-up
-    antenna="ann_mb",    # which antenna the assembly/renders show: "ann_mb" or "helical"
+    antenna="ann_mb",    # which antenna the assembly/renders show: "ann_mb", "helical" or "survey"
+    # survey antenna (K700 type) adapter: a real 5/8"-11 UNC hex bolt, head trapped between the
+    # cap and the pipe end, thread standing up through the top. Use a 3/4" long bolt (~14 mm proud).
+    srv_bolt_d=16.3, srv_hex_af=24.2, srv_hex_h=10.4, srv_top_t=5.0, srv_body_r_min=18.5,
+    srv_size=(150.0, 62.0),                             # survey antenna dia x height, for the mock-up
     # helical antenna cap: SMA bulkhead (female-female, or the bulkhead end of an extension lead)
     # through the top, cable leaves by a side window just above the pipe end
     hel_top_t=4.0, hel_sma_d=6.5, hel_chamber_h=18.0, hel_window_w=11.0, hel_window_h=13.0,
@@ -568,6 +572,31 @@ def make_helical_cap(P, od):
     return m
 
 
+def make_survey_cap(P, od):
+    """Pipe-top 5/8"-11 adapter for a survey antenna (own ground plane, screws onto the bolt).
+
+    The bolt goes in from below before the cap goes on the pipe; its head sits in a hex
+    pocket and the pipe end stops it dropping out. Local frame as make_antenna_mount.
+    """
+    r_in = od / 2 + 0.2
+    r_out = max(r_in + P["ant_sleeve_wall"], P["srv_body_r_min"])
+    sl, hp, tt = P["ant_sleeve_len"], P["srv_hex_h"], P["srv_top_t"]
+    m = cyl_z(0, 0, -sl, hp + tt, 2 * r_out)
+    ew, el, eh, s = P["ant_ear_w"], P["ant_ear_len"], P["ant_ear_h"], P["ant_slot"]
+    z0 = -sl + 3
+    m = m.union(rbox(r_in + 1, -(s / 2 + ew), z0, r_out + el, s / 2 + ew, z0 + eh))
+    m = m.union(_ear_wedge(P, r_in, r_out, z0))
+    m = m.faces(">Z").edges().fillet(2.0)
+    m = m.cut(cyl_z(0, 0, -sl - 1, 0, 2 * r_in))
+    m = m.cut(cq.Workplane("XY", origin=(0, 0, -0.01)).polygon(6, P["srv_hex_af"] / 0.8660254).extrude(hp + 0.01))
+    m = m.cut(cyl_z(0, 0, hp - 1, hp + tt + 1, P["srv_bolt_d"]))
+    m = m.cut(rbox(0, -s / 2, -sl - 1, r_out + el + 1, s / 2, -4))
+    bx, bz = r_out + el / 2 + 1, z0 + eh / 2
+    m = m.cut(cyl((bx, -(s / 2 + ew) - 1, bz), 4.4, s + 2 * ew + 2, (0, 1, 0)))
+    m = m.cut(cq.Workplane("XZ", origin=(bx, -(s / 2 + ew) + 3.0, bz)).polygon(6, 7.2 / 0.8660254).extrude(4))
+    return m
+
+
 # --------------------------------------------------------------------------
 # Component keep-outs (fit report and preview)
 # --------------------------------------------------------------------------
@@ -759,6 +788,11 @@ def main():
         hcap = hcap.rotate((0, 0, 0), (1, 0, 0), 180)         # flat top on the bed
         hcap = hcap.translate((0, 0, -hcap.val().BoundingBox().zmin))
         cq.exporters.export(hcap, os.path.join(out, f"helical_cap_{tag}.stl"), tolerance=P["stl_tol"])
+        scap = make_survey_cap(P, od)
+        cq.exporters.export(scap, os.path.join(out, f"survey_cap_{tag}.step"))
+        scap = scap.rotate((0, 0, 0), (1, 0, 0), 180)         # flat top on the bed
+        scap = scap.translate((0, 0, -scap.val().BoundingBox().zmin))
+        cq.exporters.export(scap, os.path.join(out, f"survey_cap_{tag}.stl"), tolerance=P["stl_tol"])
     for name, shp in (("base", base), ("lid (print orientation)", lid_print)):
         bb = shp.val().BoundingBox()
         print(f"{name:24s} STL extents: {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f} mm, z from {bb.zmin:.1f}")
