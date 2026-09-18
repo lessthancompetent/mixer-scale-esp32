@@ -6,9 +6,9 @@ rtk_enclosure.py checks the printed parts against plain keep-out boxes. This
 script puts recognisable dummy components in the same places (breakout with
 its sockets and micro-USB, simpleRTK2B Micro with the ZED-F9P can and U.FL,
 HC-05 on its carrier, 18650 cell in a holder, PowerBoost-style module, SMA
-bulkhead with pigtail, booted toggle switch, capped GX12 socket, lid gasket
-and screws), checks them against the printed parts and against each other,
-and writes
+bulkhead with pigtail, booted toggle switch, capped GX12 socket, the power
+wiring, lid gasket, screws, and the pipe clamp on a length of PVC pipe),
+checks them against the printed parts and against each other, and writes
 
     out/rtk_rover_assembly.step     coloured, one named part per component
 
@@ -25,7 +25,8 @@ import sys
 
 import cadquery as cq
 
-from rtk_enclosure import GERBER, P, cyl, cyl_x, cyl_z, layout, make_base, make_lid, rbox, vol
+from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, layout, make_base, make_lid,
+                           make_pipe_clamp, rbox, vol)
 
 COLORS = {
     "base": (0.85, 0.47, 0.10), "lid": (0.90, 0.55, 0.15),
@@ -35,7 +36,11 @@ COLORS = {
     "metal": (0.75, 0.76, 0.78), "gold": (0.83, 0.66, 0.22), "steel_dark": (0.30, 0.31, 0.33),
     "cell": (0.10, 0.50, 0.55), "rubber": (0.15, 0.15, 0.17), "coax": (0.25, 0.25, 0.25),
     "led_green": (0.10, 0.90, 0.20), "led_red": (0.95, 0.10, 0.10),
+    "wire_red": (0.85, 0.05, 0.05), "wire_black": (0.04, 0.04, 0.04),
+    "clamp": (0.20, 0.22, 0.25), "pvc": (0.88, 0.88, 0.86),
 }
+
+WIRE_D = 1.5     # 24 AWG silicone hook-up wire
 
 
 def hex_x(x0, x1, y, z, af):
@@ -46,6 +51,18 @@ def hex_x(x0, x1, y, z, af):
 def cone_x(x0, x1, y, z, d0, d1):
     return cq.Workplane("XY").add(cq.Solid.makeCone(d0 / 2, d1 / 2, abs(x1 - x0), cq.Vector(x0, y, z),
                                                     cq.Vector(1 if x1 > x0 else -1, 0, 0)))
+
+
+def wire(pts, d=WIRE_D):
+    """Bent wire: straight runs through pts with rounded elbows."""
+    out = None
+    for i, (a, b) in enumerate(zip(pts, pts[1:])):
+        va, vb = cq.Vector(*a), cq.Vector(*b)
+        seg = cyl(a, d, (vb - va).Length, (vb - va).toTuple())
+        if i:
+            seg = seg.union(cq.Workplane("XY").add(cq.Solid.makeSphere(d / 2, va)))
+        out = seg if out is None else out.union(seg)
+    return out
 
 
 def make_mockups(P, L):
@@ -178,9 +195,7 @@ def make_mockups(P, L):
     # ---- lid gasket (compressed cord) and screws ------------------------------------------------
     go, H = P["groove_offset"], L["H_in"]
     hw = P["cord_d"] / 2
-    ring = rbox(-(go + hw), -(go + hw), H - P["groove_depth"], L_in + go + hw, L["W_in"] + go + hw, H, P["corner_r"] + go + hw)
-    ring = ring.cut(rbox(-(go - hw), -(go - hw), H - P["groove_depth"] - 1, L_in + go - hw, L["W_in"] + go - hw, H + 1,
-                         P["corner_r"] + go - hw))
+    ring = cavity_ring(P, L, go + hw, go - hw, H - P["groove_depth"], H)
     M["gasket_cord"] = (ring, "gasket")
 
     zs = H + P["lid_t"] - P["lid_cbore_depth"]
@@ -190,11 +205,53 @@ def make_mockups(P, L):
     for i, (hx, hy) in enumerate(L["holes"]):
         s = cyl_z(hx, hy, zt, zt + 2.0, 5.6).union(cyl_z(hx, hy, zt - 6.0, zt, 3.0))
         M[f"board_screw_{i + 1}"] = (s, "steel_dark")
+
+    # ---- power wiring (see the README wiring diagram) ---------------------------------------------
+    dm = 0.5 * (L["div"][0] + L["div"][1])        # wires run on top of the divider rib, under the PCB
+    xl = 16.5                                     # lane between the jack/switch bodies and the module
+    jst_x = px0                                   # wires enter the JST square-on, stacked clear of the lane wires
+    t_x = 13.3                                    # switch terminal tips
+    M["wire_batt_pos_to_switch"] = (wire([
+        (hx1, cy + 2, 1.0), (bx1 + 4.5, cy + 2, 1.0), (bx1 + 4.5, dm, 3.8), (xl, dm, 3.8),
+        (xl, wy, 3.8), (xl, wy, wz), (t_x, wy, wz)]), "wire_red")
+    M["wire_batt_neg_to_module"] = (wire([
+        (hx1, cy - 2, 1.0), (bx1 + 6.5, cy - 2, 1.0), (bx1 + 6.5, dm, 5.5), (xl - 0.4, dm, 5.5),
+        (xl - 0.4, py0 + 3.0, 5.5), (jst_x, py0 + 3.0, 5.5)]), "wire_black")
+    M["wire_switch_to_module"] = (wire([
+        (t_x, wy - 4.7, wz), (xl - 1.3, wy - 4.7, wz), (xl - 1.3, py0 + 8.0, 6.0),
+        (jst_x, py0 + 8.0, 6.0)]), "wire_red")
+    pad_y = py1 - 8.0
+    for n, c, dy, dx in (("pos", "wire_red", 2.0, 8.0), ("neg", "wire_black", -2.0, 10.5)):
+        M[f"wire_charge_{n}"] = (wire([
+            (16.0, gy_ + dy, gz), (17.5, gy_ + dy, gz), (19.5, gy_ + dy, gz + 1.5), (px0 + dx, pad_y, 9.0), (px0 + dx, pad_y, zq)]), c)
+    bk_x = L["pcb_box"][0] + 1.2                  # VUSB / GND pads: position on the breakout est.
+    for n, c, dy in (("5v", "wire_red", 2.0), ("gnd", "wire_black", -2.0)):
+        M[f"wire_out_{n}"] = (wire([
+            (px1 - 2.0, mcy + dy, zq), (px1 - 2.0, mcy + dy, 6.0), (bk_x, L["row_c"] + dy, 6.0),
+            (bk_x, L["row_c"] + dy, zb)]), c)
+
+    # ---- pipe clamp on the back face -------------------------------------------------------------------
+    if P["fix_holes"]:
+        od = P["pipe_od"]
+        D = clamp_dims(P, L, od)
+        saddle, cap = make_pipe_clamp(P, L, od)
+        M["clamp_saddle"] = (saddle, "clamp")
+        M["clamp_cap"] = (cap, "clamp")
+        M["pvc_pipe"] = (cyl_x(D["xc"] - 110, D["xc"] + 110, D["yc"], D["zc"], od)
+                         .cut(cyl_x(D["xc"] - 111, D["xc"] + 111, D["yc"], D["zc"], od - 4.0)), "pvc")
+        zh = D["z_cap"] - P["clamp_plate_t"]
+        for i, (bx, by) in enumerate(D["bolts"]):
+            M[f"clamp_bolt_{i + 1}"] = (cyl_z(bx, by, zh - 4.0, zh, 7.0).union(cyl_z(bx, by, zh, zh + 20.0, 4.0)), "steel_dark")
+            nut = cq.Workplane("XY", origin=(bx, by, D["nut_seat"])).polygon(6, 7.0 / 0.8660254).extrude(3.2)
+            M[f"clamp_nut_{i + 1}"] = (nut.cut(cyl_z(bx, by, D["nut_seat"] - 1, D["nut_seat"] + 5, 4.0)), "metal")
+        zs0 = D["top"] - P["clamp_plate_t"] + P["clamp_cbore_depth"]
+        for i, (fx, fy) in enumerate(L["fix"]):
+            M[f"clamp_screw_{i + 1}"] = (cyl_z(fx, fy, zs0 - 2.0, zs0, 5.6).union(cyl_z(fx, fy, zs0, zs0 + 10.0, 3.0)), "steel_dark")
     return M
 
 
 # Parts that are meant to bite into the print (thread-forming screws).
-FASTENERS = ("lid_screw_", "board_screw_")
+FASTENERS = ("lid_screw_", "board_screw_", "clamp_screw_", "clamp_bolt_")
 
 
 def check(P, L, base, lid, M):

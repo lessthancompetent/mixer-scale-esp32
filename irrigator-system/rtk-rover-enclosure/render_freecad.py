@@ -26,6 +26,11 @@ ImportGui.insert(os.path.join(OUT, "rtk_rover_assembly.step"), DOC)
 doc.recompute()
 view = FreeCADGui.getDocument(DOC).ActiveView
 
+# camera moves are animated by default and a screenshot can catch one half-way
+_view_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+_anim = _view_prefs.GetBool("UseNavigationAnimations", True)
+_view_prefs.SetBool("UseNavigationAnimations", False)
+
 shapes = [o for o in doc.Objects if o.isDerivedFrom("Part::Feature")]
 for o in doc.Objects:
     if o.TypeId == "App::Origin":
@@ -41,17 +46,25 @@ def named(*prefixes):
 
 
 lid, lid_screws = named("enclosure_lid"), named("lid_screw_")
-home = {o.Name: o.Placement for o in lid + lid_screws}
+pipe = named("pvc_pipe")
+cap_side = named("clamp_cap", "clamp_bolt_")            # comes off downwards in the exploded view
+mount = named("clamp_", "pvc_pipe")
+home = {o.Name: o.Placement for o in shapes}
 
 
-def state(lid_on=True, lift=False, lid_alpha=0):
+def state(lid_on=True, mount_on=True, explode=False, lid_alpha=0):
+    for o in shapes:
+        o.Placement = home[o.Name]
     for o in lid + lid_screws:
         o.ViewObject.Visibility = lid_on
-        o.Placement = home[o.Name]
-        if lift:
-            p = FreeCAD.Placement(home[o.Name])
-            p.Base = p.Base + FreeCAD.Vector(0, 0, SCREW_LIFT if o in lid_screws else LID_LIFT)
-            o.Placement = p
+    for o in mount:
+        o.ViewObject.Visibility = mount_on
+    if explode:
+        for group, dz in ((lid, LID_LIFT), (lid_screws, SCREW_LIFT), (pipe, -14.0), (cap_side, -32.0)):
+            for o in group:
+                p = FreeCAD.Placement(home[o.Name])
+                p.Base = p.Base + FreeCAD.Vector(0, 0, dz)
+                o.Placement = p
     for o in lid:
         o.ViewObject.Transparency = lid_alpha
 
@@ -60,7 +73,7 @@ def shot(name, direction):
     """direction = the way the camera looks, in model coordinates."""
     view.setCameraType("Orthographic")
     if direction == "top":
-        view.viewTop()
+        view.setCameraOrientation(FreeCAD.Rotation())
     else:
         # camera looks along its local -Z with local +Y up; keep model +Z up
         z = FreeCAD.Vector(*direction).negative().normalize()
@@ -74,15 +87,17 @@ def shot(name, direction):
 
 
 # +X is the antenna (SMA) end, -X the switch / charge-jack end, battery along -Y.
-state(lid_on=True)
+state()
 shot("render_closed_sma_end.png", (-1.0, 0.8, -0.7))
 shot("render_closed_switch_end.png", (1.0, 0.8, -0.7))
-state(lid_on=True, lid_alpha=75)
+shot("render_back_pipe_clamp.png", (-1.0, 0.7, 0.9))
+state(lid_alpha=75, mount_on=False)
 shot("render_lid_transparent.png", (-1.0, 0.8, -0.7))
-state(lid_on=False)
+state(lid_on=False, mount_on=False)
 shot("render_open_sma_end.png", (-1.0, 0.8, -1.1))
 shot("render_open_switch_end.png", (1.0, -0.8, -1.1))
 shot("render_open_top.png", "top")
-state(lid_on=True, lift=True)
-shot("render_exploded.png", (-1.0, 0.8, -0.6))
-state(lid_on=True)
+state(explode=True)
+shot("render_exploded.png", (-1.0, 0.8, -0.45))
+state()
+_view_prefs.SetBool("UseNavigationAnimations", _anim)

@@ -50,6 +50,8 @@ P = dict(
     floor=2.4,           # base floor thickness
     lid_t=3.2,           # lid plate thickness
     corner_r=3.0,        # inside vertical corner radius of the cavity
+    outer_r=7.0,         # outside vertical corner radius
+    edge_r=1.5,          # fillet on the outside bottom edge of the base and top edge of the lid
     inner_h=22.0,        # floor top to lid underside
 
     # ---- gasket ------------------------------------------------------------
@@ -59,17 +61,30 @@ P = dict(
     groove_offset=2.0,   # groove centre line distance from the cavity wall
 
     # ---- lid screws (M3 thread-forming into the lugs) -----------------------
-    lug_r=5.5,           # external lug radius
-    lug_e=5.5,           # lug centre distance outside the cavity edge
+    lug_r=6.0,           # screw pillar radius (pillars are inside the smooth outer shell)
+    lug_inset=5.5,       # screw centre distance in from the outside faces
+    pillar_blend=3.0,    # blend radius where a pillar meets the cavity wall
     lug_hole=2.5,        # pilot hole (use 4.0 for an M3 heat-set insert)
     lug_hole_depth=14.0,
     lid_screw_d=3.4,
     lid_cbore_d=6.4, lid_cbore_depth=1.5,
-    mid_lugs=True,       # extra lug mid-length on each long wall (6 screws)
+    mid_lugs=True,       # extra pillar mid-length on each long wall (6 screws)
     lip_t=1.2, lip_h=2.0, lip_clear=0.3,   # lid locating lip inside the cavity
 
-    # ---- external mounting tabs at floor level (0 = none) --------------------
-    tab_hole=4.5, tab_len=12.0, tab_out=8.0, tab_t=3.0, tab_pos=(0.22, 0.78),
+    # ---- pipe clamp on the back (floor) face ---------------------------------
+    # Four blind M3 thread-forming holes go up into bosses beside the long walls,
+    # so nothing passes through the sealed floor. pipe_od: NZ/AU "20 mm" PVC
+    # pressure pipe is DN20 = 26.7 mm OD; 20 mm conduit is 20.0 mm OD.
+    fix_holes=True,
+    fix_dx=15.0,         # hole offset along X either side of the box centre
+    fix_wall_gap=3.5,    # hole centre distance from the inside of the long wall
+    fix_boss_d=7.0, fix_boss_h=6.0, fix_hole=2.5, fix_hole_cap=1.2,
+    pipe_od=26.7,
+    pipe_variants=(20.0, 26.7),   # clamp STLs are written for each of these
+    clamp_len=40.0, clamp_plate_t=6.0, clamp_min_t=4.0, clamp_ring_t=4.0, clamp_gap=2.0,
+    clamp_bolt_d=4.4, clamp_bolt_dx=12.0, clamp_bolt_off=8.5, clamp_flange=14.0,
+    clamp_nut_af=7.2, clamp_nut_seat=8.0,        # M4 nut pocket; seat height above the parting face
+    clamp_screw_d=3.4, clamp_cbore_d=6.2, clamp_cbore_depth=3.0,
 
     # ---- breakout board (from gerbers) ---------------------------------------
     pcb_len=38.25,       # along enclosure X (gerber Y)
@@ -105,7 +120,7 @@ P = dict(
     # default fits Adafruit PowerBoost 1000C (36.3 x 22.9); TP4056+boost boards fit too
     mod_len=37.5, mod_w=24.0, mod_h=7.0,
     mod_rib_h=1.5, mod_rib_t=1.2,
-    mod_y_shift=-1.5,    # module bay centre relative to the board-row centre
+    mod_y_shift=1.5,     # module bay centre relative to the board-row centre (wire lane by the divider)
 
     # ---- -X end wall: charge jack and power switch ---------------------------
     charge_d=12.2,       # GX12 aviation connector or IP67 5.5x2.1 DC jack (12 mm panel hole)
@@ -155,13 +170,15 @@ GERBER = dict(
 # --------------------------------------------------------------------------
 def layout(P):
     L = {}
-    corner_intrude = 0.0   # external lugs do not enter the cavity
+    # the screw pillars stand inside the cavity; keep the component rows clear of them
+    ym = P["lug_inset"] - P["wall"] + P["lug_r"] + 0.5
+    L["y_margin"] = ym
     batt_x0 = 4.0
-    row_batt = (0.5, 0.5 + P["batt_w"])
+    row_batt = (ym, ym + P["batt_w"])
     div = (row_batt[1], row_batt[1] + P["batt_rib_t"])
     row_w = P["pcb_w"] + 2 * P["pcb_side_clear"]
     row_pcb = (div[1], div[1] + row_w)
-    L["W_in"] = row_pcb[1] + 0.5
+    L["W_in"] = row_pcb[1] + ym
     L["batt"] = (batt_x0, row_batt[0], batt_x0 + P["batt_len"], row_batt[1])
     L["div"] = div
     L["L_in"] = L["batt"][2] + P["sma_bay_len"]
@@ -193,11 +210,13 @@ def layout(P):
     L["sma_y"] = 0.5 * (row_batt[0] + row_batt[1]) + 1.0
     L["vent_y"] = 0.5 * (row_batt[0] + row_batt[1])
 
-    e = P["lug_e"]
-    lugs = [(-e, -e), (L["L_in"] + e, -e), (-e, L["W_in"] + e), (L["L_in"] + e, L["W_in"] + e)]
+    e = P["lug_inset"] - P["wall"]
+    lugs = [(e, e), (L["L_in"] - e, e), (e, L["W_in"] - e), (L["L_in"] - e, L["W_in"] - e)]
     if P["mid_lugs"]:
-        lugs += [(L["L_in"] / 2, -e), (L["L_in"] / 2, L["W_in"] + e)]
+        lugs += [(L["L_in"] / 2, e), (L["L_in"] / 2, L["W_in"] - e)]
     L["lugs"] = lugs
+    g_ = P["fix_wall_gap"]
+    L["fix"] = [(L["L_in"] / 2 + sx * P["fix_dx"], y) for sx in (-1, 1) for y in (g_, L["W_in"] - g_)]
     return L
 
 
@@ -238,21 +257,44 @@ def slot_x(x0, x1, y, z, w, h, r):
 
 
 def outline_2d(P, L, z0, z1):
-    """Outer body: rounded rectangle plus the external screw lugs."""
+    """Outer body: a plain rounded rectangle. The screw pillars are inside it."""
     w = P["wall"]
-    L_in, W_in = L["L_in"], L["W_in"]
-    body = rbox(-w, -w, z0, L_in + w, W_in + w, z1, P["corner_r"] + w)
-    r = P["lug_r"]
-    for (lx, ly) in L["lugs"]:
-        body = body.union(cyl_z(lx, ly, z0, z1, 2 * r))
-        # fill between the lug and the wall so the lug is not a lone cylinder
-        fx0, fx1 = (lx, 0.0) if lx < 0 else ((L_in, lx) if lx > L_in else (lx - r, lx + r))
-        fy0, fy1 = (ly, 0.0) if ly < 0 else ((W_in, ly) if ly > W_in else (ly - r, ly + r))
-        if lx < 0 or lx > L_in:
-            body = body.union(rbox(min(fx0, fx1), ly - r, z0, max(fx0, fx1), ly + r, z1))
-        if ly < 0 or ly > W_in:
-            body = body.union(rbox(lx - r, min(fy0, fy1), z0, lx + r, max(fy0, fy1), z1))
-    return body
+    return rbox(-w, -w, z0, L["L_in"] + w, L["W_in"] + w, z1, P["outer_r"])
+
+
+_CAVITY_WIRE = {}
+
+
+def cavity_wire(P, L):
+    """Plan outline of the cavity: rounded rectangle with the screw pillars bitten out."""
+    key = (L["L_in"], L["W_in"], tuple(L["lugs"]))
+    if key not in _CAVITY_WIRE:
+        Li, Wi = L["L_in"], L["W_in"]
+        s = rbox(0, 0, 0, Li, Wi, 1)
+        for (lx, ly) in L["lugs"]:
+            s = s.cut(cyl_z(lx, ly, -1, 2, 2 * P["lug_r"]))
+
+        # blend only the edges where a pillar meets a wall (not the cylinder seams)
+        def on_wall(e):
+            c = e.Center()
+            return min(abs(c.x), abs(c.x - Li), abs(c.y), abs(c.y - Wi)) < 1e-6
+        s = s.newObject([e for e in s.edges("|Z").vals() if on_wall(e)]).fillet(P["pillar_blend"])
+        _CAVITY_WIRE[key] = s.faces("<Z").val().outerWire()
+    return _CAVITY_WIRE[key]
+
+
+def cavity_offset(P, L, d):
+    """Workplane holding the cavity outline offset by d (+ = into the wall)."""
+    wp = cq.Workplane("XY").add(cavity_wire(P, L)).toPending()
+    return wp.offset2D(d, "arc") if abs(d) > 1e-9 else wp
+
+
+def cavity_prism(P, L, d, z0, z1):
+    return cavity_offset(P, L, d).extrude(z1 - z0).translate((0, 0, z0))
+
+
+def cavity_ring(P, L, d_out, d_in, z0, z1):
+    return cavity_prism(P, L, d_out, z0, z1).cut(cavity_prism(P, L, d_in, z0 - 1, z1 + 1))
 
 
 # --------------------------------------------------------------------------
@@ -263,30 +305,26 @@ def make_base(P, L):
     L_in, W_in, H_in = L["L_in"], L["W_in"], L["H_in"]
 
     base = outline_2d(P, L, -f, H_in)
-    cavity = rbox(0, 0, 0, L_in, W_in, H_in + 1, P["corner_r"])
-    base = base.cut(cavity)
+    if P["edge_r"] > 0:
+        base = base.faces("<Z").edges().fillet(P["edge_r"])
+    base = base.cut(cavity_prism(P, L, 0.0, 0, H_in + 1))
 
     # gasket groove in the top of the wall
     go, gw, gd = P["groove_offset"], P["groove_w"], P["groove_depth"]
-    g_out = rbox(-(go + gw / 2), -(go + gw / 2), H_in - gd, L_in + go + gw / 2, W_in + go + gw / 2, H_in + 1,
-                 P["corner_r"] + go + gw / 2)
-    g_in = rbox(-(go - gw / 2), -(go - gw / 2), H_in - gd - 1, L_in + go - gw / 2, W_in + go - gw / 2, H_in + 2,
-                P["corner_r"] + go - gw / 2)
-    base = base.cut(g_out.cut(g_in))
+    base = base.cut(cavity_ring(P, L, go + gw / 2, go - gw / 2, H_in - gd, H_in + 1))
 
-    # lid screw pilot holes in the lugs
+    # lid screw pilot holes in the pillars
     for (lx, ly) in L["lugs"]:
         base = base.cut(cyl_z(lx, ly, H_in - P["lug_hole_depth"], H_in + 1, P["lug_hole"]))
 
-    # external mounting tabs at floor level
-    if P["tab_hole"] > 0:
-        for fr in P["tab_pos"]:
-            tx = fr * L_in
-            for (y0, y1, hy) in ((-w - P["tab_out"], -w + 1, -w - P["tab_out"] / 2),
-                                 (W_in + w - 1, W_in + w + P["tab_out"], W_in + w + P["tab_out"] / 2)):
-                tab = rbox(tx - P["tab_len"] / 2, y0, -f, tx + P["tab_len"] / 2, y1, -f + P["tab_t"], 2.0)
-                tab = tab.cut(cyl_z(tx, hy, -f - 1, 5, P["tab_hole"]))
-                base = base.union(tab)
+    # blind holes for the pipe clamp, up into bosses beside the long walls
+    if P["fix_holes"]:
+        r = P["fix_boss_d"] / 2
+        for (fx, fy) in L["fix"]:
+            yw = -0.1 if fy < W_in / 2 else W_in + 0.1
+            base = base.union(cyl_z(fx, fy, 0, P["fix_boss_h"], P["fix_boss_d"]))
+            base = base.union(rbox(fx - r, min(fy, yw), 0, fx + r, max(fy, yw), P["fix_boss_h"]))
+            base = base.cut(cyl_z(fx, fy, -f - 1, P["fix_boss_h"] - P["fix_hole_cap"], P["fix_hole"]))
 
     # PCB standoffs
     for (hx, hy) in L["holes"]:
@@ -345,13 +383,11 @@ def make_lid(P, L):
     L_in, W_in, H_in = L["L_in"], L["W_in"], L["H_in"]
     z0 = H_in
     lid = outline_2d(P, L, z0, z0 + P["lid_t"])
-    # locating lip inside the cavity
+    if P["edge_r"] > 0:
+        lid = lid.faces(">Z").edges().fillet(P["edge_r"])
+    # locating lip inside the cavity, following the pillars
     c = P["lip_clear"]
-    lip_o = rbox(c, c, z0 - P["lip_h"], L_in - c, W_in - c, z0, max(P["corner_r"] - c, 0.5))
-    lip_i = rbox(c + P["lip_t"], c + P["lip_t"], z0 - P["lip_h"] - 1,
-                 L_in - c - P["lip_t"], W_in - c - P["lip_t"], z0 + 1,
-                 max(P["corner_r"] - c - P["lip_t"], 0.5))
-    lid = lid.union(lip_o.cut(lip_i))
+    lid = lid.union(cavity_ring(P, L, -c, -c - P["lip_t"], z0 - P["lip_h"], z0))
     # screw holes with counterbores
     for (lx, ly) in L["lugs"]:
         lid = lid.cut(cyl_z(lx, ly, z0 - 1, z0 + P["lid_t"] + 1, P["lid_screw_d"]))
@@ -363,6 +399,49 @@ def make_lid(P, L):
         elif P["led_window"] == "thin":
             lid = lid.cut(cyl_z(lx, ly, z0 - 1, z0 + P["lid_t"] - P["led_skin"], P["led_window_d"]))
     return lid
+
+
+# --------------------------------------------------------------------------
+# Pipe clamp for the back face (two printed parts: saddle + cap)
+# --------------------------------------------------------------------------
+def clamp_dims(P, L, od):
+    f = P["floor"]
+    D = dict(xc=L["L_in"] / 2, yc=L["W_in"] / 2, top=-f)
+    D["zc"] = -f - P["clamp_min_t"] - od / 2          # pipe axis (runs along X)
+    D["z_saddle"] = D["zc"] + P["clamp_gap"] / 2      # saddle parting face
+    D["z_cap"] = D["zc"] - P["clamp_gap"] / 2         # cap parting face
+    D["half_w"] = od / 2 + P["clamp_flange"]
+    D["bolts"] = [(D["xc"] + sx * P["clamp_bolt_dx"], D["yc"] + sy * (od / 2 + P["clamp_bolt_off"]))
+                  for sx in (-1, 1) for sy in (-1, 1)]
+    D["nut_seat"] = D["z_saddle"] + P["clamp_nut_seat"]
+    return D
+
+
+def make_pipe_clamp(P, L, od):
+    """Saddle screws to the four blind holes in the back; the cap clamps the pipe with 4 x M4."""
+    D = clamp_dims(P, L, od)
+    xc, yc, zc, top = D["xc"], D["yc"], D["zc"], D["top"]
+    hl, hw = P["clamp_len"] / 2, D["half_w"]
+    bore = cyl_x(xc - hl - 1, xc + hl + 1, yc, zc, od + 0.4)
+    ear = max(abs(fy - yc) for _, fy in L["fix"]) + 5.0
+    zb = top - P["clamp_plate_t"]
+
+    saddle = rbox(xc - hl, yc - ear, zb, xc + hl, yc + ear, top, 3.0)
+    saddle = saddle.union(rbox(xc - hl, yc - hw, D["z_saddle"], xc + hl, yc + hw, top)).cut(bore)
+    for (bx, by) in D["bolts"]:
+        saddle = saddle.cut(cyl_z(bx, by, D["z_saddle"] - 1, top + 1, P["clamp_bolt_d"]))
+        saddle = saddle.cut(cq.Workplane("XY", origin=(bx, by, D["nut_seat"]))
+                            .polygon(6, P["clamp_nut_af"] / 0.8660254).extrude(top + 1 - D["nut_seat"]))
+    for (fx, fy) in L["fix"]:
+        saddle = saddle.cut(cyl_z(fx, fy, zb - 1, top + 1, P["clamp_screw_d"]))
+        saddle = saddle.cut(cyl_z(fx, fy, zb - 1, zb + P["clamp_cbore_depth"], P["clamp_cbore_d"]))
+
+    cap = rbox(xc - hl, yc - hw, D["z_cap"] - P["clamp_plate_t"], xc + hl, yc + hw, D["z_cap"], 2.0)
+    cap = cap.union(cyl_x(xc - hl, xc + hl, yc, zc, od + 0.4 + 2 * P["clamp_ring_t"]))
+    cap = cap.cut(rbox(xc - hl - 1, yc - hw - 1, D["z_cap"], xc + hl + 1, yc + hw + 1, top + 1)).cut(bore)
+    for (bx, by) in D["bolts"]:
+        cap = cap.cut(cyl_z(bx, by, D["z_cap"] - P["clamp_plate_t"] - 1, D["z_cap"] + 1, P["clamp_bolt_d"]))
+    return saddle, cap
 
 
 # --------------------------------------------------------------------------
@@ -404,12 +483,11 @@ def vol(shape):
 
 def fit_report(P, L, base, lid, K):
     w = P["wall"]
-    lug_out = P["lug_e"] + P["lug_r"]
     print("\n=== Layout ===")
     print(f"cavity        : {L['L_in']:.1f} x {L['W_in']:.1f} x {L['H_in']:.1f} mm  (L x W x H)")
     print(f"box body      : {L['L_in'] + 2 * w:.1f} x {L['W_in'] + 2 * w:.1f} x "
           f"{L['H_in'] + P['floor'] + P['lid_t']:.1f} mm  (with lid)")
-    print(f"over the lugs : {L['L_in'] + 2 * lug_out:.1f} x {L['W_in'] + 2 * lug_out:.1f} mm")
+    print(f"outside       : smooth shell, screw pillars inside (corner r {P['outer_r']}, edge fillet {P['edge_r']})")
     x0, y0, x1, y1 = L["pcb_box"]
     print(f"PCB           : X {x0:.2f}..{x1:.2f}  Y {y0:.2f}..{y1:.2f}  Z {P['standoff_h']:.1f}..{P['standoff_h'] + P['pcb_t']:.1f}")
     print("standoffs     : " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in L["holes"]))
@@ -421,12 +499,13 @@ def fit_report(P, L, base, lid, K):
     print(f"battery bay   : X {L['batt'][0]:.1f}..{L['batt'][2]:.1f}  Y {L['batt'][1]:.1f}..{L['batt'][3]:.1f}")
     print("LED windows   : " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in L["leds"]))
     print("lid screws    : " + ", ".join(f"({x:.1f},{y:.1f})" for x, y in L["lugs"]))
-    import math
-    go, rc = P["groove_offset"], P["corner_r"] + P["groove_offset"]
-    cord = 2 * (L["L_in"] + 2 * go) + 2 * (L["W_in"] + 2 * go) - (8 - 2 * math.pi) * rc
+    cord = cavity_offset(P, L, P["groove_offset"]).vals()[0].Length()
     print(f"gasket cord   : {P['cord_d']} mm cord, groove {P['groove_w']} x {P['groove_depth']} mm, "
           f"centre-line length {cord:.0f} mm (cut ~{cord + 5:.0f} mm)")
 
+    if P["fix_holes"]:
+        print("clamp holes   : " + ", ".join(f"({x:.1f},{y:.1f})" for x, y in L["fix"]) +
+              f"  blind M3, {P['floor'] + P['fix_boss_h'] - P['fix_hole_cap']:.1f} mm deep from the back face")
     print("\n=== Fit check (keep-out volume intersecting the printed parts, mm^3) ===")
     ok = True
     names = list(K)
@@ -501,7 +580,7 @@ def render_all(P, L, base, lid, K, out):
     plans = [
         ("plan_z0.png", "Plan section 0.3 mm above the floor: ribs, tabs, standoff flares", 0.3),
         ("plan_z11.png", "Plan section at Z = 11 mm: wall openings, standoffs, component keep-outs", 11.0),
-        ("plan_groove.png", f"Plan section at Z = {H - 0.7:.1f} mm: gasket groove and screw lugs", H - 0.7),
+        ("plan_groove.png", f"Plan section at Z = {H - 0.7:.1f} mm: gasket groove and screw pillars", H - 0.7),
     ]
     for fn, title, z in plans:
         section_png(os.path.join(out, fn), title, "z", z, [(base, *grey)] + comp, "X (mm)", "Y (mm)")
@@ -533,6 +612,14 @@ def main():
     lid_print = lid.rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, L["H_in"] + P["lid_t"]))
     cq.exporters.export(lid_print, os.path.join(out, "rtk_enclosure_lid.stl"), tolerance=P["stl_tol"])
     cq.exporters.export(lid, os.path.join(out, "rtk_enclosure_lid.step"))
+    for od in P["pipe_variants"]:
+        tag = f"od{od:g}".replace(".", "p")
+        for nm, shp in zip(("saddle", "cap"), make_pipe_clamp(P, L, od)):
+            cq.exporters.export(shp, os.path.join(out, f"pipe_clamp_{nm}_{tag}.step"))
+            # STL flipped: saddle plate / cap parting face down on the bed
+            shp = shp.rotate((0, 0, 0), (1, 0, 0), 180)
+            shp = shp.translate((0, 0, -shp.val().BoundingBox().zmin))
+            cq.exporters.export(shp, os.path.join(out, f"pipe_clamp_{nm}_{tag}.stl"), tolerance=P["stl_tol"])
     for name, shp in (("base", base), ("lid (print orientation)", lid_print)):
         bb = shp.val().BoundingBox()
         print(f"{name:24s} STL extents: {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f} mm, z from {bb.zmin:.1f}")
