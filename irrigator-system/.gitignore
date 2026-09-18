@@ -1,0 +1,3 @@
+.pio/
+common/test/test_*
+!common/test/test_*.cpp
