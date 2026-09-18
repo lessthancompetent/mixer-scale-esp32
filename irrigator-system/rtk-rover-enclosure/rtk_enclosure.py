@@ -109,7 +109,15 @@ P = dict(
 
     # ---- phone holder on the pole -------------------------------------------------
     phone_w=88.0, phone_l=176.0,
-    phone_t=12.0,        # thickness INCLUDING its case: measure it
+    phone_t=16.0,        # thickness INCLUDING its case
+    # One side rail is a spring-loaded sliding jaw. Its two M4 x 16 screws run in slots with nyloc
+    # nuts left just slack; a silicone O-ring from each screw to an M3 post on the back of the
+    # plate pulls the jaw shut. Thumb the tab outwards to free the phone.
+    phone_jaw_w=12.0,    # jaw width (holds the two captive M4 nyloc nuts)
+    phone_jaw_travel=6.0,   # +- about the nominal phone width -> 82..94 mm wide, and room to open past the lip
+    phone_jaw_bolts=(15.0, 45.0),   # screw positions up from the bottom ledge
+    phone_band_span=35.0,   # jaw screw to anchor post at nominal width: suits a 20 mm ID x 2 mm O-ring
+    phone_tab=(24.0, 9.0),  # thumb tab on the jaw: length x how far it sticks out
     phone_tilt=45.0,     # screen tilt back from vertical, deg (45 = square-on to your eyes at chest height)
     phone_arm=88.0,      # pole axis to the cradle centre; keeps the phone's top edge clear of the pole
     phone_attach=80.0,   # bracket centre, measured up from the bottom of the phone
@@ -628,22 +636,31 @@ def make_phone_cradle(P):
     t, wl, lip = P["phone_plate_t"], P["phone_wall"], P["phone_lip"]
     xb = P["phone_attach"]                      # inner face of the bottom ledge
     H = t + pt + c + lip                         # top of the rails
-    m = rbox(xb - P["phone_plate_l"], -(w / 2 + wl), 0, xb + wl, w / 2 + wl, t, 4.0)
-    m = m.union(rbox(xb, -(w / 2 + wl), 0, xb + wl, w / 2 + wl, H))                       # bottom ledge
+    jw, tr = P["phone_jaw_w"], P["phone_jaw_travel"]
+    y_jaw = w / 2 + jw + tr + 1.0                # plate edge on the sliding-jaw (+Y) side
+    m = rbox(xb - P["phone_plate_l"], -(w / 2 + wl), 0, xb + wl, y_jaw, t, 4.0)
+    m = m.union(rbox(xb, -(w / 2 + wl), 0, xb + wl, y_jaw, H))                            # bottom ledge
     for sy in (-1, 1):
-        y0, y1 = sorted((sy * w / 2, sy * (w / 2 + wl)))
-        m = m.union(rbox(xb - P["phone_rail_l"], y0, 0, xb + wl, y1, H))                    # side rail
-        # rail lip: triangular section so it prints without support
-        tri = (cq.Workplane("YZ", origin=(xb - P["phone_rail_l"], 0, 0))
-               .polyline([(sy * w / 2, H), (sy * (w / 2 - lip), H), (sy * w / 2, H - lip)]).close()
-               .extrude(P["phone_rail_l"] + wl))
-        m = m.union(tri)
+        if sy < 0:                               # fixed rail; the +Y rail is make_phone_jaw()
+            m = m.union(rbox(xb - P["phone_rail_l"], -(w / 2 + wl), 0, xb + wl, -w / 2, H))
+            # rail lip: triangular section so it prints without support
+            tri = (cq.Workplane("YZ", origin=(xb - P["phone_rail_l"], 0, 0))
+                   .polyline([(sy * w / 2, H), (sy * (w / 2 - lip), H), (sy * w / 2, H - lip)]).close()
+                   .extrude(P["phone_rail_l"] + wl))
+            m = m.union(tri)
         # bottom corner lip
         ya, yb_ = sorted((sy * (w / 2 - P["phone_corner_lip"]), sy * w / 2))
         tri = (cq.Workplane("XZ", origin=(0, yb_, 0))
                .polyline([(xb, H), (xb - lip, H), (xb, H - lip)]).close().extrude(yb_ - ya))
         m = m.union(tri)
     m = m.cut(rbox(xb - 1, -P["phone_port_w"] / 2, t, xb + wl + 1, P["phone_port_w"] / 2, H + 1))   # charge port
+    for bx in P["phone_jaw_bolts"]:              # slots for the jaw's M4 screws
+        yc = w / 2 + jw / 2
+        m = m.cut(rbox(xb - bx - 2.2, yc - tr - 2.2, -1, xb - bx + 2.2, yc + tr + 2.2, t + 1, 2.19))
+        # O-ring anchor post: M3 x 16 countersunk from the front (flush under the phone), two nuts behind
+        ya = yc - P["phone_band_span"]
+        m = m.cut(cyl_z(xb - bx, ya, -1, t + 1, 3.4))
+        m = m.cut(cq.Workplane("XY").add(cq.Solid.makeCone(1.7, 3.3, 1.7, cq.Vector(xb - bx, ya, t - 1.7), cq.Vector(0, 0, 1))))
     px, py = P["phone_screw_pitch"]
     for sx in (-1, 1):
         for sy in (-1, 1):
@@ -651,6 +668,27 @@ def make_phone_cradle(P):
             m = m.cut(cyl_z(x, y, -1, t + 1, 3.4))
             m = m.cut(cq.Workplane("XY").add(cq.Solid.makeCone(1.7, 3.3, 1.7, cq.Vector(x, y, t - 1.7), cq.Vector(0, 0, 1))))
     return m
+
+
+def make_phone_jaw(P, offset=0.0):
+    """Sliding side rail, in the cradle's frame at the nominal phone width (+offset in Y). Prints as modelled."""
+    w, pt, c = P["phone_w"] + 2 * P["phone_clear"], P["phone_t"], P["phone_clear"]
+    t, lip, jw = P["phone_plate_t"], P["phone_lip"], P["phone_jaw_w"]
+    xb = P["phone_attach"]
+    H = t + pt + c + lip
+    x0, x1 = xb - P["phone_rail_l"], xb - lip - 1.0          # stops short of the ledge's corner lip
+    y0 = w / 2 + offset
+    j = rbox(x0, y0, t, x1, y0 + jw, H, 0).edges("|Z").edges(">Y").fillet(3.0)
+    j = j.union(cq.Workplane("YZ", origin=(x0, 0, 0))
+                .polyline([(y0, H), (y0 - lip, H), (y0, H - lip)]).close().extrude(x1 - x0))
+    tl, tw = P["phone_tab"]
+    xm = 0.5 * (x0 + x1)
+    j = j.union(rbox(xm - tl / 2, y0 + jw - 3.0, t + 0.4, xm + tl / 2, y0 + jw + tw, H, 0)
+                .edges("|Z").edges(">Y").fillet(3.5))                                     # thumb tab
+    for bx in P["phone_jaw_bolts"]:
+        j = j.cut(cyl_z(xb - bx, y0 + jw / 2, t - 1, t + 12.0, 4.4))
+        j = j.cut(rbox(xb - bx - 3.6, y0 + jw / 2 - 3.7, t + 4.0, xb - bx + 3.6, y0 + jw + tw + 1, t + 9.3))   # side-entry nyloc slot
+    return j
 
 
 def phone_place(P, shape):
@@ -870,6 +908,9 @@ def main():
     cq.exporters.export(lid, os.path.join(out, "rtk_enclosure_lid.step"))
     cq.exporters.export(make_phone_cradle(P), os.path.join(out, "phone_cradle.stl"), tolerance=P["stl_tol"])
     cq.exporters.export(make_phone_cradle(P), os.path.join(out, "phone_cradle.step"))
+    jaw = make_phone_jaw(P)
+    cq.exporters.export(jaw, os.path.join(out, "phone_jaw.step"))
+    cq.exporters.export(jaw.translate((0, 0, -P["phone_plate_t"])), os.path.join(out, "phone_jaw.stl"), tolerance=P["stl_tol"])
     for od in P["pipe_variants"]:
         tag = f"od{od:g}".replace(".", "p")
         br, pcap = make_phone_bracket(P, od)

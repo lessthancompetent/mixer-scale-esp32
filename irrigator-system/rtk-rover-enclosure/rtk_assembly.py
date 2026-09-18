@@ -26,7 +26,7 @@ import sys
 import cadquery as cq
 
 from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, gxy, layout, make_antenna_mount,
-                           make_helical_cap, make_phone_bracket, make_phone_cradle, make_survey_cap, phone_place,
+                           make_helical_cap, make_phone_bracket, make_phone_cradle, make_phone_jaw, make_survey_cap, phone_place,
                            make_base, make_lid, make_pipe_clamp, rbox, vol)
 from rtk_enclosure import gbox as _gbox
 
@@ -271,6 +271,7 @@ def make_mockups(P, L):
         M["phone_bracket"] = (at_phone(br), "clamp")
         M["phone_clamp_cap"] = (at_phone(pcap), "clamp")
         M["phone_cradle"] = (at_phone(phone_place(P, make_phone_cradle(P))), "clamp")
+        M["phone_jaw"] = (at_phone(phone_place(P, make_phone_jaw(P, -P["phone_clear"]))), "base")
         xb, t, c = P["phone_attach"], P["phone_plate_t"], P["phone_clear"]
         ph = rbox(xb - c - P["phone_l"], -P["phone_w"] / 2, t, xb - c, P["phone_w"] / 2, t + P["phone_t"] - 2.0, 9.0)
         M["phone"] = (at_phone(phone_place(P, ph)), "plastic_black")
