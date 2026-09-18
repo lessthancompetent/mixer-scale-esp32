@@ -372,7 +372,7 @@ To buy:
 | 1 | **right-angle SMA-male to SMA-female bulkhead** pigtail, RG174 (or RG316), 75-100 mm | for the SMA Micro. Bulkhead end: 1/4-36 thread with nut, washer and O-ring; Ø6.5 hole. The run is ~60 mm; spare cable loops over the charger module. (U.FL Micro: U.FL to SMA bulkhead, 1.13 mm cable, 100-150 mm) |
 | 1 | 18650 holder with wire leads, ~77 x 20.5 x 15 mm | pocket is 78.5 x 21.5 |
 | 1 | 18650 cell, protected | 3000-3500 mAh should run the F9P + HC-05 (~0.7 W) for roughly 12 h |
-| 1 | charger + 5 V boost module | Adafruit PowerBoost 1000C (load-sharing: runs while charging), or a TP4056 + MT3608 / "1S charge-boost 5 V 1 A" board up to 37.5 x 24 mm |
+| 1 | charger + 5 V boost module | AliExpress **DD05CVSA 5 V** (23 x 15.4 x 5.7 mm; 4.5-8 V in, 1 A charge, 5 V 1.2 A out, runs while charging, 0.45 mA standby) is the cheap equivalent of the Adafruit PowerBoost 1000C and fits the 37.5 x 24 bay with room to spare. It has no battery under-voltage cut-off of its own: use a **protected** 18650. Avoid IP5306 "power bank" boards: they need a button press to start and switch off at light load |
 | 1 | JST-PH 2-pin lead | only for the PowerBoost's battery socket |
 | 1 | mini toggle switch MTS-102 (SPDT, 6 mm bush) + silicone boot | Ø6.2 hole; or set `sw_d = 12.2` for a 12 mm IP67 latching push button |
 | 1 | GX12 2-pin panel socket + line plug + dust cap, or IP67 5.5 x 2.1 DC jack | Ø12.2 hole, 5 V charge input |
