@@ -17,7 +17,7 @@ at the site, and the unit is routinely sprayed with effluent.
 | Travel speed | ~100 m/h (≈8.3 m per 5 min) |
 | Positioning | Standalone GNSS, no RTK. 1–1.5 m is ample for a 24 m swath and for stall detection at this speed |
 | GNSS antenna | Spare drone helical, 80 mm high, SMA female. No ground plane needed |
-| MCU / radio | LilyGO T3 (ESP32 + SX1276), already owned. `LoRa.h`, 915 MHz, SF9, BW125, CR4/5 — unchanged |
+| MCU / radio | LilyGO T3 (ESP32 + SX1276), already owned. `LoRa.h`, 915 MHz, SF9, BW125, CR4/5 — unchanged, except the new transmitters add a payload CRC (receivers take CRC presence from the header, so the bridge needs no change) |
 | GNSS receiver | u-blox M10 breakout on UART, with switched supply and V_BCKP kept alive for hot starts |
 | Stall decision | Moves from the field node to the pump module (mains powered, knows pump state) |
 | Silence trip | None. Loss of beacon does not stop the pump; the Pi shows "irrigator not heard" |
@@ -75,13 +75,19 @@ reply count.
   - After a genuine stop the verdict arrives ~3.5 min later (the window still
     holds travel until then).
   - Newest sample older than 2 min → no verdict (no silence trip).
+  - Degraded link: if the beacon is stuck on its 5 min cadence (its replies
+    are not getting through) three-sample groups cannot be formed, so the
+    detector falls back to comparing single samples. A stall is then still
+    cut, but it can take the better part of an hour.
+  - Samples more than 200 m from the previous one are ignored as corrupt;
+    four in a row are accepted as a genuine relocation.
   - Buffer is cleared on pump-off, so each pump run starts fresh.
   - Insufficient samples in the window (lost packets) → not stalled.
 - On stall: broadcast `MSG_ALERT_STALL`, call the existing `pulseCutoff()`
   once (existing `cutLatched` behaviour — re-arms on manual restart), then
   broadcast `MSG_PUMP_CUTOFF`; both from src `0x01` with the irrigator's last
   position. The Pi already logs these as STALL and KICKOUT. If the pump is
-  still sensed running, `MSG_ALERT_STALL` repeats every 1 min.
+  still sensed running, the alert and the relay pulse repeat every 1 min.
 - `MSG_PUMP_CUTOFF` handling from `0x02` is retained so the older modules still
   work.
 

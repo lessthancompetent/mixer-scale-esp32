@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Repo root: `C:\Users\OEM\mixer-scale-esp32`. All paths below are relative to it. Run every command from the repo root in Git Bash.
-- LoRa settings must stay 915 MHz, SF9, BW 125 kHz, CR 4/5, LoRa.h defaults otherwise (sync 0x12, CRC off) — the bridge and legacy modules depend on them.
+- LoRa settings must stay 915 MHz, SF9, BW 125 kHz, CR 4/5, sync 0x12 — the bridge and legacy modules depend on them. *(Amended after the final review: the beacon and pump module now transmit with payload CRC on. In explicit-header mode the receiver takes CRC presence from the header, so the unmodified bridge still receives them and now drops corrupt packets. Bench Step 2 verifies this.)*
 - `MSG_GPS_POSITION` stays the legacy 14-byte layout (src, type, lat i32 BE ×1e6, lon i32 BE ×1e6, speed i16 cm/s, battery %, pump_on).
 - New message type `MSG_PUMP_STATE = 0x12`. Device IDs: pump `0x01`, irrigator `0x02`.
 - Stall rule: armed after 15 min pump-on; stalled when movement across a 5 min window is < 3 m. No silence trip.
@@ -1417,6 +1417,7 @@ pio run -d irrigator-system/irrigator-beacon-t3 -t upload
 Leave the pump-sense input open (pump OFF). Watch both serial monitors.
 Expected — beacon: `[TX] <lat>, <lon>  sats=N  batt=NN%` then `[SLEEP] pump=0 missed=0  300s`.
 Expected — pump module: `[RX] beacon <lat>, <lon> ...` then `[TX] type=0x12 payload=0`.
+If the Pi/bridge is connected, confirm `receiver.py` prints a `[GPS]` line for each beacon packet — this proves the unmodified bridge still receives packets now that the transmitters send a payload CRC. If it does not, remove the two `LoRa.enableCrc()` calls and tell Claude.
 If the beacon shows `missed=1`: the reply was not heard — raise `REPLY_DELAY_MS` in `pump_module.ino` to 80 and retest. If `[LoRa] init failed`: set `LORA_RST` to 14 in `board_t3.h`.
 
 - [ ] **Step 3: Interval switching**
@@ -1455,6 +1456,27 @@ git commit -m "Irrigator beacon: bench test results"
 ```
 
 ---
+
+## Changes made by the final review (code differs from the task listings above)
+
+The task code blocks above are as first implemented (commits `9685b13`..`06da6d3`). The whole-branch review then changed the following (commits `70cfba9`, `dfe9e23`, `91f1959`) — the source files are the truth:
+
+- `StallConfig.groupSpanMs` (150 s) replaces the `windowMs / 2` group-span check, which could never be met at the beacon's real ~32 s cadence in the bench build. The test simulator now uses a 32 s + jitter cadence.
+- Sparse-sample fallback: if three-sample groups cannot be formed (beacon stuck on its 5 min cadence because replies are not getting through), the detector compares single samples instead. Slower — expect tens of minutes to a verdict — but no longer never.
+- Position jumps > 200 m from the previous sample are ignored (4 in a row are accepted as a genuine relocation and clear the history).
+- LoRa payload CRC enabled on both transmitters.
+- A failed cut is re-pulsed every 60 s while the pump is still sensed running; `checkStall(millis())` fixes a one-iteration underflow.
+- Beacon: 90 s hard cap on wake time, pump-state decay on LoRa init failure, UART released before the GNSS is powered down, and the unverified u-blox SBAS setup removed (M10 enables SBAS by default; any NMEA GNSS module now works unchanged).
+
+### Follow-ups (minor, none block the bench test)
+
+- Wake-cap callback should call `LoRa.sleep()` first; check `esp_timer_create/start_once` return values; comment that `FIX_TIMEOUT_MS` must stay below `WAKE_CAP_MS`.
+- Clamp or document `groupSpanMs < windowMs` (bench build's 120 s window is smaller than the 150 s span, so the two averaging groups can share samples there).
+- `board_t3.h`: `#undef LORA_RST` before redefining it (harmless redefinition warning; 23 is the value used).
+- `gnssIsOn` is now write-only; remove it.
+- Seed `rngState` explicitly in each statistical host test; add saturation/clamp tests for `beacon_logic.h`.
+- Beacon no-fix heartbeat shows as `pump=2/3` in the Pi log (cosmetic).
+- Remove the legacy unauthenticated `MSG_PUMP_CUTOFF` path once the old irrigator-module firmware is retired.
 
 ## After Plan A
 
