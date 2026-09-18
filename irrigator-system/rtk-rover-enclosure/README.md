@@ -24,7 +24,7 @@ files and the drawings live in `out/`.
 | `out/plan_z0.png` | floor: battery and module bay ribs, clamp-screw bosses |
 | `out/pipe_clamp_saddle_od*.stl`, `out/pipe_clamp_cap_od*.stl` / `.step` | pipe clamp, one pair per pipe size (see *Pipe clamp*) |
 | `out/antenna_mount_od*.stl`, `out/helical_cap_od*.stl`, `out/survey_cap_od*.stl` / `.step` | pipe-top antenna mounts (see *Antenna on top of the pipe*) |
-| `out/phone_cradle.stl`, `out/phone_jaw.stl`, `out/phone_bracket_od*.stl`, `out/phone_clamp_cap_od*.stl` / `.step` | phone holder (see *Phone holder*) |
+| `out/phone_cradle.stl`, `out/phone_jaw_left/right.stl`, `out/phone_tongue_x2.stl`, `out/phone_link.stl`, `out/phone_link_spacer.stl`, `out/phone_bracket_od*.stl`, `out/phone_clamp_cap_od*.stl` / `.step` | phone holder (see *Phone holder*) |
 | `out/plan_groove.png` | gasket groove and screw pillars |
 | `out/wall_plusX.png`, `out/wall_minusX.png` | the two end walls |
 | `out/side_section.png` | long section through battery bay, SMA jack and lid |
@@ -282,26 +282,38 @@ antenna instead (`out/rtk_rover_assembly_helical.step`, `..._survey.step`).
 
 ![whole pole](out/render_pole_upright.png)
 
-Four printed parts, for an 88 x 176 mm phone, 16 mm thick in its case
-(`phone_w`, `phone_l`, `phone_t`):
+For an 88 x 176 mm phone, 16 mm thick in its case (`phone_w`, `phone_l`,
+`phone_t`). Both side rails are spring-loaded jaws tied together so the phone
+is always centred:
 
-![cradle and jaw](out/render_phone_cradle_front.png)
+![cradle, front](out/render_phone_cradle_front.png)
+![cradle, back: tongues and link](out/render_phone_cradle_back.png)
 
-* `phone_cradle.stl`: back plate with a bottom ledge, one fixed 70 mm side rail
-  and slots for the jaw. The lips only reach 2.5 mm over the glass, the middle
-  of the bottom edge is open for the gesture bar, and there is a 26 mm gap in
-  the ledge for a charging cable. Prints flat, back down, no supports (the
-  lips are triangular underneath).
-* `phone_jaw.stl`: the other side rail, **spring-loaded**. It slides +-6 mm
-  (phones 82-94 mm wide) on two M4 x 16 screws that come through slots from
-  the back into nyloc nuts in the jaw; leave the nuts just slack enough for it
-  to slide. Behind the plate a **silicone O-ring (20 mm ID x 2 mm)** runs from
-  each screw, between two washers under its head, to an M3 x 16 countersunk
-  post fitted from the front with two nuts behind. The O-rings pull the jaw
-  onto the phone. To take the phone out, thumb the jaw's tab outwards and lift
-  that edge of the phone; let go and it closes. A strip of 1 mm foam on the
-  jaw and rail faces stops rattle. Because it grips the sides, the 16 mm lip
-  height is not critical: a thinner phone is still held.
+* `phone_cradle.stl`: back plate with the bottom ledge and four slots. The
+  ledge's corner lips only reach 2.5 mm over the glass, the middle of the
+  bottom edge is open for the gesture bar, and there is a 26 mm gap for a
+  charging cable. Prints flat, back down, no supports.
+* `phone_jaw_left.stl`, `phone_jaw_right.stl`: the side rails. Each slides
+  +-6 mm (phones 76-100 mm wide) on two M4 x 25 screws that come through the
+  slots from the back into nyloc nuts in the jaw; leave the nuts just slack
+  enough to slide. Each has a thumb tab.
+* `phone_tongue_x2.stl` (print two, identical): plate behind the cradle on each
+  jaw's two screws, reaching in to a pin near the centre line.
+* `phone_link.stl` + `phone_link_spacer.stl`: a link on an M3 x 16 countersunk
+  pivot screw (fitted from the front, flush under the phone; spacer, link,
+  washer, nyloc behind). Its slots take the two tongue pins, so the jaws can
+  only move **equal and opposite**: the phone centres itself, and thumbing
+  either tab opens both.
+* Springs: on each pair of opposite jaw screws, behind the tongue, a 5 mm
+  spacer (M4 nuts or printed sleeve), washer, **silicone O-ring ~50 mm ID x
+  2.5 mm** stretched straight across to the other jaw's screw, washer, screw
+  head. Two O-rings. The spacers carry them clear of the link.
+
+To take the phone out, push either tab outwards and lift; let go and the jaws
+close. A strip of 1 mm foam on the jaw faces stops rattle. Because the jaws
+grip the sides, the 16 mm lip height is not critical: a thinner phone is still
+held.
+
 * `phone_bracket_od*.stl`: half clamp plus an arm with a **45 degree** face
   (`phone_tilt`), so at chest height the screen is square-on to your eyes with
   the pole held vertical. The arm puts the cradle centre 88 mm from the pole
@@ -340,9 +352,9 @@ To buy:
 | 4 | M4 x 20 bolts + 4 M4 nuts (+ washers) | pipe clamp; stainless for outdoors |
 | 4 | M4 x 25 bolts + 4 M4 nuts | phone holder clamp |
 | 4 | M3 x 10 countersunk screws | phone cradle to bracket |
-| 2 | M4 x 16 screws, 2 M4 nyloc nuts, 4 M4 washers | phone jaw |
-| 2 | M3 x 16 countersunk screws + 4 M3 nuts | O-ring anchor posts |
-| 2 | silicone O-rings 20 mm ID x 2 mm | jaw springs (a few spares; strong rubber bands work meanwhile) |
+| 4 | M4 x 25 screws, 4 M4 nyloc nuts, 8 M4 washers, 8 plain M4 nuts (as 5 mm spacers) | phone jaws |
+| 1 | M3 x 16 countersunk screw, M3 nyloc nut, washer | link pivot |
+| 2 | silicone O-rings ~50 mm ID x 2.5 mm | jaw springs (get spares; strong rubber bands work meanwhile) |
 | ~1 m | 24 AWG silicone hook-up wire, red + black; heat-shrink | |
 | | double-sided foam tape | holder and module |
 | | filament: PETG or ASA, ~120 g | base, lid, clamp; 0.2 mm layers, 4+ perimeters |
