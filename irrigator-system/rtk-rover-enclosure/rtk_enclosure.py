@@ -52,7 +52,7 @@ P = dict(
     corner_r=3.0,        # inside vertical corner radius of the cavity
     outer_r=7.0,         # outside vertical corner radius
     edge_r=1.5,          # fillet on the outside bottom edge of the base and top edge of the lid
-    inner_h=22.0,        # floor top to lid underside
+    inner_h=24.0,        # floor top to lid underside (24 clears an SMA plug on the Micro; 22 is enough for U.FL)
 
     # ---- gasket ------------------------------------------------------------
     cord_d=2.0,          # silicone O-ring cord diameter
@@ -105,7 +105,15 @@ P = dict(
     # ---- things on the board (keep-outs for the fit check) -------------------
     micro_w=24.0,        # simpleRTK2B Micro across the socket rows (+1 mm each side)
     micro_len=31.0,      # along the socket rows incl. antenna connector
-    micro_h=9.5,         # above breakout top face incl. sockets and U.FL/SMA
+    micro_h=9.5,         # above breakout top face incl. sockets and U.FL
+    # Antenna connector on the Micro. "sma": edge-mount SMA. The breakout is then
+    # turned 180 deg so the jack points over the low charger module (there is no
+    # room for it against the +X wall), and the bulkhead moves up beside the board
+    # so the pigtail is a straight run. "ufl": board as before, bulkhead at the
+    # end of the battery row.
+    micro_ant="sma",
+    micro_sma_len=22.0,  # jack + right-angle plug beyond the Micro's edge (keep-out)
+    micro_sma_d=11.0,    # keep-out height/width around the jack axis
     hc05_w=16.5, hc05_h=8.5,   # HC-05 (ZS-040 carrier) under the board
 
     # ---- 18650 holder bay (generic single 18650 holder with wire leads) -------
@@ -133,7 +141,8 @@ P = dict(
     # ---- +X end wall: SMA bulkhead and optional micro-USB opening -------------
     sma_d=6.5,           # 1/4-36 SMA bulkhead
     sma_flat=0.0,        # e.g. 5.8 for a D-shaped anti-rotation hole, 0 = round
-    sma_z=11.0,
+    sma_z=11.0,          # micro_ant="ufl"
+    sma_z_high=17.0,     # micro_ant="sma": bulkhead above the breakout's corner, in line with the cable
     sma_body_len=15.0,   # keep-out behind the wall (jack body + crimp)
     usb_mode="none",     # "none" (sealed), "direct" (hole for a plug), "panel" (panel-mount extension)
     usb_cut_w=13.0, usb_cut_h=8.5, usb_cut_r=2.0,
@@ -165,6 +174,22 @@ GERBER = dict(
 )
 
 
+def gxy(L, gx, gy):
+    """Breakout (gerber) coordinates -> enclosure X, Y."""
+    return (L["bx0"] + L["bs"] * gy, L["by0"] - L["bs"] * gx)
+
+
+def gspan(L, gx0, gx1, gy0, gy1):
+    (xa, ya), (xb, yb) = gxy(L, gx0, gy0), gxy(L, gx1, gy1)
+    return (min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb))
+
+
+def gbox(L, gx0, gx1, gy0, gy1, z0, z1, r=0.0):
+    """Box given in breakout (gerber) x/y and enclosure Z."""
+    x0, y0, x1, y1 = gspan(L, gx0, gx1, gy0, gy1)
+    return rbox(x0, y0, z0, x1, y1, z1, r)
+
+
 # --------------------------------------------------------------------------
 # Derived layout
 # --------------------------------------------------------------------------
@@ -186,18 +211,21 @@ def layout(P):
     L["row_pcb"] = row_pcb
     L["row_c"] = 0.5 * (row_pcb[0] + row_pcb[1])
 
-    # board frame -> enclosure frame: X = bx0 + gy ; Y = by0 - gx
+    # board frame -> enclosure frame: X = bx0 + bs * gy ; Y = by0 - bs * gx   (bs = -1: board turned 180 deg)
     g = GERBER
+    flip = P["micro_ant"] == "sma"
+    if flip and P["usb_mode"] != "none":
+        raise ValueError('micro_ant="sma" turns the breakout USB inwards; usb_mode must be "none"')
+    bs = L["bs"] = -1.0 if flip else 1.0
     pcb_xmax = L["L_in"] - P["pcb_end_gap"]
-    L["bx0"] = pcb_xmax - g["y_max"]
-    L["by0"] = L["row_c"] + 0.5 * (g["x_min"] + g["x_max"])
-    L["pcb_box"] = (L["bx0"] + g["y_min"], L["by0"] - g["x_max"],
-                    L["bx0"] + g["y_max"], L["by0"] - g["x_min"])
-    L["holes"] = [(L["bx0"] + gy, L["by0"] - gx) for gx, gy in g["holes"]]
-    L["usb_y"] = L["by0"] - g["usb"][0]
+    L["bx0"] = pcb_xmax - bs * (g["y_min"] if flip else g["y_max"])
+    L["by0"] = L["row_c"] + bs * 0.5 * (g["x_min"] + g["x_max"])
+    L["pcb_box"] = gspan(L, g["x_min"], g["x_max"], g["y_min"], g["y_max"])
+    L["holes"] = [gxy(L, gx, gy) for gx, gy in g["holes"]]
+    L["usb_y"] = gxy(L, *g["usb"])[1]
     L["usb_z"] = P["standoff_h"] + P["pcb_t"] + P["usb_center_above_pcb"]
-    L["usb_face_x"] = L["bx0"] + g["usb_face_y"]
-    L["leds"] = [(L["bx0"] + gy, L["by0"] - gx) for gx, gy in g["leds"]]
+    L["usb_face_x"] = gxy(L, 0, g["usb_face_y"])[0]
+    L["leds"] = [gxy(L, gx, gy) for gx, gy in g["leds"]]
 
     # -X end wall: charge jack low in the row, switch high in the row
     L["charge_y"] = row_pcb[0] + 0.5 + P["charge_body_d"] / 2
@@ -207,7 +235,10 @@ def layout(P):
     mc = L["row_c"] + P["mod_y_shift"]
     L["mod"] = (mod_x0, mc - P["mod_w"] / 2, mod_x0 + P["mod_len"], mc + P["mod_w"] / 2)
     # SMA in the +X wall in front of the battery row
-    L["sma_y"] = 0.5 * (row_batt[0] + row_batt[1]) + 1.0
+    if flip:
+        L["sma_y"], L["sma_z"] = 0.5 * (div[0] + div[1]) + 0.25, P["sma_z_high"]
+    else:
+        L["sma_y"], L["sma_z"] = 0.5 * (row_batt[0] + row_batt[1]) + 1.0, P["sma_z"]
     L["vent_y"] = 0.5 * (row_batt[0] + row_batt[1])
 
     e = P["lug_inset"] - P["wall"]
@@ -358,7 +389,7 @@ def make_base(P, L):
 
     # ---- wall openings ----
     # +X wall: SMA bulkhead
-    base = base.cut(cyl_x(L_in - 1, L_in + w + 1, L["sma_y"], P["sma_z"], P["sma_d"], P["sma_flat"]))
+    base = base.cut(cyl_x(L_in - 1, L_in + w + 1, L["sma_y"], L["sma_z"], P["sma_d"], P["sma_flat"]))
     # +X wall: optional micro-USB opening for the breakout's own connector
     if P["usb_mode"] in ("direct", "panel"):
         base = base.cut(slot_x(L_in - 1, L_in + w + 1, L["usb_y"], L["usb_z"],
@@ -457,12 +488,16 @@ def make_keepouts(P, L):
         pcb = pcb.cut(cyl_z(hx, hy, zb - 1, zb + 3, P["hole_d"]))
     K["breakout PCB"] = pcb
     rc = 0.5 * (g["micro_rows"][0] + g["micro_rows"][1])
-    K["simpleRTK2B Micro"] = rbox(L["bx0"] + g["micro_y"][0], L["by0"] - rc - P["micro_w"] / 2, zb + P["pcb_t"],
-                                  L["bx0"] + g["micro_y"][1], L["by0"] - rc + P["micro_w"] / 2,
-                                  zb + P["pcb_t"] + P["micro_h"])
+    K["simpleRTK2B Micro"] = gbox(L, rc - P["micro_w"] / 2, rc + P["micro_w"] / 2, g["micro_y"][0], g["micro_y"][1],
+                                  zb + P["pcb_t"], zb + P["pcb_t"] + P["micro_h"])
+    if P["micro_ant"] == "sma":
+        za = zb + P["pcb_t"] + 6.3            # Micro board centre plane = SMA jack axis (est.)
+        K["Micro SMA + plug"] = gbox(L, rc - P["micro_sma_d"] / 2, rc + P["micro_sma_d"] / 2,
+                                     g["micro_y"][1], g["micro_y"][1] + P["micro_sma_len"],
+                                     za - P["micro_sma_d"] / 2, za + P["micro_sma_d"] / 2)
     hc = 0.5 * (g["x_min"] + g["x_max"])
-    K["HC-05"] = rbox(L["bx0"] + g["hc05_y"][0], L["by0"] - hc - P["hc05_w"] / 2, zb - P["hc05_h"],
-                      L["bx0"] + g["hc05_y"][1], L["by0"] - hc + P["hc05_w"] / 2, zb)
+    K["HC-05"] = gbox(L, hc - P["hc05_w"] / 2, hc + P["hc05_w"] / 2, g["hc05_y"][0], g["hc05_y"][1],
+                      zb - P["hc05_h"], zb)
     if P["usb_mode"] != "none":
         K["USB plug"] = rbox(L["usb_face_x"], L["usb_y"] - 5.5, L["usb_z"] - 3.75,
                              L["L_in"] + P["wall"] + 20, L["usb_y"] + 5.5, L["usb_z"] + 3.75, 1.5)
@@ -470,7 +505,7 @@ def make_keepouts(P, L):
     K["18650 holder"] = rbox(bx0, by0, 0, bx1, by1, P["batt_h"])
     mx0, my0, mx1, my1 = L["mod"]
     K["charger/boost module"] = rbox(mx0, my0, 0, mx1, my1, P["mod_h"])
-    K["SMA jack"] = cyl_x(L["L_in"] - P["sma_body_len"], L["L_in"], L["sma_y"], P["sma_z"], 9.0)
+    K["SMA jack"] = cyl_x(L["L_in"] - P["sma_body_len"], L["L_in"], L["sma_y"], L["sma_z"], 9.0)
     K["charge jack"] = cyl_x(0, P["charge_body_depth"], L["charge_y"], P["charge_z"], P["charge_body_d"])
     K["switch body"] = rbox(0, L["sw_y"] - P["sw_body_w"] / 2, P["sw_z"] - P["sw_body_h"] / 2,
                             P["sw_body_depth"], L["sw_y"] + P["sw_body_w"] / 2, P["sw_z"] + P["sw_body_h"] / 2)
@@ -491,7 +526,8 @@ def fit_report(P, L, base, lid, K):
     x0, y0, x1, y1 = L["pcb_box"]
     print(f"PCB           : X {x0:.2f}..{x1:.2f}  Y {y0:.2f}..{y1:.2f}  Z {P['standoff_h']:.1f}..{P['standoff_h'] + P['pcb_t']:.1f}")
     print("standoffs     : " + ", ".join(f"({x:.2f},{y:.2f})" for x, y in L["holes"]))
-    print(f"SMA           : +X wall, Y={L['sma_y']:.2f} Z={P['sma_z']:.2f}, d={P['sma_d']}")
+    print(f"Micro antenna : {P['micro_ant']}" + ("  (breakout turned 180 deg, ANT end towards -X)" if L["bs"] < 0 else ""))
+    print(f"SMA           : +X wall, Y={L['sma_y']:.2f} Z={L['sma_z']:.2f}, d={P['sma_d']}")
     print(f"micro-USB     : mode={P['usb_mode']}, +X wall, Y={L['usb_y']:.2f} Z={L['usb_z']:.2f}")
     print(f"charge jack   : -X wall, Y={L['charge_y']:.2f} Z={P['charge_z']:.2f}, d={P['charge_d']}")
     print(f"switch        : -X wall, Y={L['sw_y']:.2f} Z={P['sw_z']:.2f}, d={P['sw_d']}")
@@ -572,7 +608,7 @@ def render_all(P, L, base, lid, K, out):
     colors = {
         "breakout PCB": "#2a6fdb", "simpleRTK2B Micro": "#1b3f8f", "HC-05": "#2e8b57",
         "USB plug": "#555555", "18650 holder": "#c0392b", "charger/boost module": "#8e44ad",
-        "SMA jack": "#d4a017", "charge jack": "#7f8c8d", "switch body": "#e67e22",
+        "SMA jack": "#d4a017", "Micro SMA + plug": "#b8860b", "charge jack": "#7f8c8d", "switch body": "#e67e22",
     }
     comp = [(K[n], colors[n], 0.55) for n in K]
     grey = ("#404040", 1.0)

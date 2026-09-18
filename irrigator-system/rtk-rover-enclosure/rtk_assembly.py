@@ -25,8 +25,9 @@ import sys
 
 import cadquery as cq
 
-from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, layout, make_base, make_lid,
+from rtk_enclosure import (GERBER, P, cavity_ring, clamp_dims, cyl, cyl_x, cyl_z, gxy, layout, make_base, make_lid,
                            make_pipe_clamp, rbox, vol)
+from rtk_enclosure import gbox as _gbox
 
 COLORS = {
     "base": (0.85, 0.47, 0.10), "lid": (0.90, 0.55, 0.15),
@@ -74,7 +75,7 @@ def make_mockups(P, L):
 
     def gbox(gx0, gx1, gy0, gy1, z0, z1, r=0.0):
         """Box given in gerber x/y (board frame), enclosure Z."""
-        return rbox(L["bx0"] + gy0, L["by0"] - gx1, z0, L["bx0"] + gy1, L["by0"] - gx0, z1, r)
+        return _gbox(L, gx0, gx1, gy0, gy1, z0, z1, r)
 
     # ---- breakout board ------------------------------------------------------
     x0, y0, x1, y1 = L["pcb_box"]
@@ -105,8 +106,10 @@ def make_mockups(P, L):
     M["micro_headers"] = (pins, "plastic_black")
     M["micro_pcb"] = (gbox(rc - 11.75, rc + 11.75, -0.5, 29.5, zm, zm + 1.0, 1.0), "pcb_black")
     M["micro_zed_f9p"] = (gbox(rc - 8.5, rc + 8.5, 3.5, 25.5, zm + 1.0, zm + 3.4), "metal")
+    sma_micro = P["micro_ant"] == "sma"
     ufl_gy = 27.5
-    M["micro_ufl"] = (gbox(rc - 1.3, rc + 1.3, ufl_gy - 1.3, ufl_gy + 1.3, zm + 1.0, zm + 2.25), "gold")
+    if not sma_micro:
+        M["micro_ufl"] = (gbox(rc - 1.3, rc + 1.3, ufl_gy - 1.3, ufl_gy + 1.3, zm + 1.0, zm + 2.25), "gold")
 
     # ---- HC-05 on a ZS-040 carrier under the breakout ---------------------------
     hc = 0.5 * (g["x_min"] + g["x_max"])
@@ -149,7 +152,7 @@ def make_mockups(P, L):
 
     # ---- SMA bulkhead (+X wall) with U.FL pigtail ------------------------------------
     w, L_in = P["wall"], L["L_in"]
-    sy, sz = L["sma_y"], P["sma_z"]
+    sy, sz = L["sma_y"], L["sma_z"]
     sma_in = 8.0                                 # flange + crimp inside the wall (keep-out allows 15)
     sma = cyl_x(L_in - 2.0, L_in, sy, sz, 9.0)                          # inner flange
     sma = sma.union(cyl_x(L_in - sma_in, L_in - 2.0, sy, sz, 4.5))      # crimp ferrule
@@ -159,16 +162,35 @@ def make_mockups(P, L):
     M["sma_washer"] = (cyl_x(L_in + w, L_in + w + 0.8, sy, sz, 9.5).cut(cyl_x(L_in + w - 1, L_in + w + 2, sy, sz, 6.4)), "metal")
     M["sma_nut"] = (hex_x(L_in + w + 0.8, L_in + w + 3.0, sy, sz, 8.0).cut(cyl_x(L_in + w, L_in + w + 4, sy, sz, 6.4)), "gold")
 
-    ufl_x, ufl_y = L["bx0"] + ufl_gy, L["by0"] - rc
-    plug_z = zm + 2.25
-    M["pigtail_ufl_plug"] = (rbox(ufl_x - 1.6, ufl_y - 2.6, plug_z, ufl_x + 1.6, ufl_y + 1.6, plug_z + 1.2, 0.5), "gold")
-    cz_cable = plug_z + 0.6
-    pts = [(ufl_x, ufl_y - 2.6, cz_cable), (ufl_x, ufl_y - 10.0, cz_cable),
-           (ufl_x - 3.0, sy + 11.0, cz_cable - 1.0), (L_in - sma_in - 8.0, sy + 4.0, sz + 5.0),
-           (L_in - sma_in - 4.5, sy + 0.4, sz + 1.0), (L_in - sma_in, sy, sz)]
-    path = cq.Workplane("XY").spline(pts, tangents=[(0, -1, 0), (1, 0, 0)], includeCurrent=False)
-    cable = cq.Workplane("XZ", origin=pts[0]).circle(1.13 / 2).sweep(path)
-    M["pigtail_coax"] = (cable, "coax")
+    if sma_micro:
+        # edge-mount SMA on the Micro, pointing -X over the charger module; right-angle plug, RG316 to the bulkhead
+        ex, ey = gxy(L, rc, 29.5)                 # Micro board edge at the antenna end
+        za = zm + 0.5
+        jack = rbox(ex - 2.0, ey - 3.2, za - 3.2, ex + 3.5, ey + 3.2, za + 3.2).cut(
+            rbox(ex - 0.01, ey - 4, zm, ex + 4, ey + 4, zm + 1.0))          # legs straddle the board
+        M["micro_sma_jack"] = (jack.union(cyl_x(ex - 9.5, ex - 2.0, ey, za, 6.35)), "gold")
+        px = ex - 14.0                            # right-angle plug body centre
+        plug = cyl_x(ex - 9.5, ex - 2.2, ey, za, 9.0).cut(cyl_x(ex - 9.6, ex - 1.0, ey, za, 6.4))   # coupling nut
+        plug = plug.union(rbox(px - 4.0, ey - 4.0, za - 4.0, ex - 9.5, ey + 4.0, za + 4.0))
+        plug = plug.union(cyl((px, ey - 4.0, za), 5.0, 4.0, (0, -1, 0)))                         # crimp ferrule
+        M["pigtail_sma_plug"] = (plug, "gold")
+        cab_d, rb = 2.5, 8.0                      # RG316, bend radius
+        x_in = L_in - sma_in
+        pts = [(px, ey - 8.0, za), (px, sy + rb, za)]
+        pts += [(px + rb - rb * math.cos(t), sy + rb - rb * math.sin(t), za + (sz - za) * t / (math.pi / 2))
+                for t in [i * math.pi / 16 for i in range(1, 9)]]
+        pts += [(x_in, sy, sz)]
+        M["pigtail_coax"] = (wire(pts, cab_d), "coax")
+    else:
+        ufl_x, ufl_y = gxy(L, rc, ufl_gy)
+        plug_z = zm + 2.25
+        M["pigtail_ufl_plug"] = (rbox(ufl_x - 1.6, ufl_y - 2.6, plug_z, ufl_x + 1.6, ufl_y + 1.6, plug_z + 1.2, 0.5), "gold")
+        cz_cable = plug_z + 0.6
+        pts = [(ufl_x, ufl_y - 2.6, cz_cable), (ufl_x, ufl_y - 10.0, cz_cable),
+               (ufl_x - 3.0, sy + 11.0, cz_cable - 1.0), (L_in - sma_in - 8.0, sy + 4.0, sz + 5.0),
+               (L_in - sma_in - 4.5, sy + 0.4, sz + 1.0), (L_in - sma_in, sy, sz)]
+        path = cq.Workplane("XY").spline(pts, tangents=[(0, -1, 0), (1, 0, 0)], includeCurrent=False)
+        M["pigtail_coax"] = (cq.Workplane("XZ", origin=pts[0]).circle(1.13 / 2).sweep(path), "coax")
 
     # ---- toggle switch with silicone boot (-X wall) -------------------------------------
     wy, wz = L["sw_y"], P["sw_z"]
@@ -225,10 +247,10 @@ def make_mockups(P, L):
         M[f"wire_charge_{n}"] = (wire([
             (16.0, gy_ + dy, gz), (17.5, gy_ + dy, gz), (19.5, gy_ + dy, gz + 1.5), (px0 + dx, pad_y, 9.0), (px0 + dx, pad_y, zq)]), c)
     bk_x = L["pcb_box"][0] + 1.2                  # VUSB / GND pads: position on the breakout est.
-    for n, c, dy in (("5v", "wire_red", 2.0), ("gnd", "wire_black", -2.0)):
+    for n, c, s_ in (("5v", "wire_red", 1.0), ("gnd", "wire_black", -1.0)):
+        by_ = L["row_c"] + s_ * 9.2               # outside the HC-05 carrier, inside the standoffs
         M[f"wire_out_{n}"] = (wire([
-            (px1 - 2.0, mcy + dy, zq), (px1 - 2.0, mcy + dy, 6.0), (bk_x, L["row_c"] + dy, 6.0),
-            (bk_x, L["row_c"] + dy, zb)]), c)
+            (px1 - 2.0, mcy + s_ * 2.0, zq), (px1 - 2.0, mcy + s_ * 2.0, 4.5), (bk_x, by_, 4.5), (bk_x, by_, zb)]), c)
 
     # ---- pipe clamp on the back face -------------------------------------------------------------------
     if P["fix_holes"]:
