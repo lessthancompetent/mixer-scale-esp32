@@ -119,7 +119,8 @@ then points back over the charger module, which is only 7 mm tall, so there
 is 40 mm of free air for the jack and plug and the box stays the same length.
 It only needs 2 mm more height (`inner_h = 24`) for the plug's coupling nut.
 The bulkhead moves to Z = 17 mm, between the battery and the breakout, so the
-cable reaches it in a straight line. The lid's LED windows follow the board.
+cable reaches it in a straight line. The breakout's own LEDs end up under the
+SMA jack, so the lid carries separate status LEDs instead (see *Status LEDs*).
 
 `micro_ant = "ufl"` gives the earlier arrangement: antenna end at the +X wall,
 bulkhead at the end of the battery row (`inner_h = 22` is then enough).
