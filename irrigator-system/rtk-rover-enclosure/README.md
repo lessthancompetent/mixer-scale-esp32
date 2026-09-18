@@ -6,7 +6,8 @@ Water-resistant 3D-printed box for a portable RTK GNSS rover:
   simpleRTK2B Micro (u-blox ZED-F9P) plugged into it and an HC-05 Bluetooth
   module on the back
 * **internal 18650 cell** in a holder, with a charger/boost module
-* **SMA bulkhead** on the end wall for the antenna pigtail
+* **SMA bulkhead** on the end wall, fed by a pigtail from the Micro's own
+  edge-mount **SMA** (default) or U.FL (`micro_ant`)
 * sealed power switch and capped charging connector
 * smooth outside: the six lid-screw pillars are inside the shell, outside edges filleted
 * two-part clamp that fixes the back face to a PVC pipe / pole
@@ -56,20 +57,23 @@ other (thread-forming screws excepted) and exits non-zero on a clash.
 
 What the mock-ups showed beyond the keep-out boxes:
 
-* The 18650 **cell** stands taller than its holder: its top is at Z ≈ 20.1 mm,
-  1.9 mm under the lid, while the `batt_h = 15` keep-out only covers the
-  holder. It clears the lid and the locating lip, but do not reduce `inner_h`
-  below about 21 mm.
-* The tallest part is the U.FL plug and pigtail on the Micro at Z ≈ 20.9 mm
-  (lid underside 22.0 mm).
+* The 18650 **cell** stands taller than its holder: its top is at Z ≈ 20.1 mm
+  while the `batt_h = 15` keep-out only covers the holder. It clears the lid
+  and the locating lip.
+* With the SMA Micro the tallest part is the pigtail's plug on the Micro's
+  jack, top at Z ≈ 22.4 mm under a lid at 24.0 mm. The jack axis height
+  (socket + header + half the Micro board = 6.3 mm above the breakout) and how
+  far the jack overhangs are estimates: measure them before printing. The
+  mock plug clears the breakout's micro-USB shell by only ~0.5 mm, which is
+  inside that uncertainty; a straight plug or a slim right-angle one avoids it.
 * The power wiring is modelled as 1.5 mm wire and clash-checked like everything
   else. The two battery leads run back to the switch end on top of the divider
   rib, underneath the breakout, stacked one above the other; the rest are short
   hops in the 16-18 mm lane between the jack/switch bodies and the module.
   Where the VUSB/GND pads sit on the breakout is an estimate.
-* The pigtail has only ~8 mm between the back of the SMA crimp and the end of
-  the battery holder, so it has to rise over the holder end as modelled. Use
-  1.13 mm cable rather than RG178, and keep `sma_bay_len` at 16 mm or more.
+* The pigtail is a straight 36 mm run beside the battery at lid-side height
+  with one ~8 mm-radius bend at the plug. That is tight for RG316; RG174 or
+  1.37 mm cable takes it more easily.
 
 ## Board data used
 
@@ -92,8 +96,8 @@ Your "25 × 32 mm" is that 1" × 1.25" pattern, so the standoffs are on the exac
 ## Size and layout
 
 ```
-cavity      98.5 x 72.9 x 22.0 mm
-outside    106.5 x 80.9 x 27.6 mm   (4 mm walls, lid on, nothing sticking out
+cavity      98.5 x 72.9 x 24.0 mm
+outside    106.5 x 80.9 x 29.6 mm   (4 mm walls, lid on, nothing sticking out
                                      but the connectors)
 ```
 
@@ -103,29 +107,46 @@ are inside a plain rounded box (7 mm corner radius, 1.5 mm fillet on the top
 and bottom edges). The 7.5 mm strips this leaves along the long walls carry
 the mid-length pillars, the clamp-screw bosses and spare wire.
 
+### SMA on the Micro: the breakout is turned round
+
+An edge-mount SMA on the Micro overhangs the breakout by ~9 mm and then needs
+a plug, and the breakout's antenna end sits 2 mm from the +X wall. The Micro
+itself cannot be reversed in its sockets (that swaps its pins), so with
+`micro_ant = "sma"` the **whole breakout is turned 180 degrees**. The jack
+then points back over the charger module, which is only 7 mm tall, so there
+is 40 mm of free air for the jack and plug and the box stays the same length.
+It only needs 2 mm more height (`inner_h = 24`) for the plug's coupling nut.
+The bulkhead moves to Z = 17 mm, between the battery and the breakout, so the
+cable reaches it in a straight line. The lid's LED windows follow the board.
+
+`micro_ant = "ufl"` gives the earlier arrangement: antenna end at the +X wall,
+bulkhead at the end of the battery row (`inner_h = 22` is then enough).
+
 Plan view (X along the box, +X is the antenna end):
 
 ```
         -X end wall                                        +X end wall
         charge jack, switch                                SMA bulkhead
-   +-------------------------------------------------------------------+
+   +--o------------------------------o------------------------------o--+
    |  [switch]   [charger/boost bay 37.5x24]   [ breakout PCB 38x32 ]   |  board row
-   |  [charge]                                 [ F9P Micro on top    ]  |
-   |                                           [ HC-05 underneath    ]  |
+   |  [charge]          [RA plug]=[SMA]=====[ F9P Micro on top    ]  |
+   |                        |                  [ HC-05 underneath    ]  |
+   |                        +--- coax ------------------------[bulkhead]  (Z = 17)
    |-------------------------------------------------------------------|
-   |  [ 18650 holder 78.5 x 21.5                     ]   [SMA jack]     |  battery row
+   |  [ 18650 holder 78.5 x 21.5                     ]   [wire bay]     |  battery row
    +--o------------------------------o------------------------------o--+
       o = lid-screw pillars, inside the shell, the gasket passes inside them
 ```
 
 * The board sits on four Ø6 mm standoffs, 10 mm tall, leaving room for the
-  HC-05 underneath and 10.4 mm above the board for the F9P Micro and the
-  U.FL pigtail.
-* The board's USB edge faces the +X wall (2 mm gap). The LEDs end up under
-  two thinned windows in the lid.
+  HC-05 underneath and 12.4 mm above the board for the F9P Micro and its
+  antenna plug.
+* The board's USB/antenna edge faces the charger module; its HC-05 header
+  edge is 2 mm from the +X wall. The LEDs end up under two thinned windows in
+  the lid.
 * The battery bay is a pocket with 3 mm retaining ribs on three sides and an
-  end stop with a wire notch. The 16 mm beyond it is where the SMA bulkhead's
-  body and crimp sit.
+  end stop with a wire notch. The 16 mm beyond it is where the battery leads
+  turn back (and where the bulkhead sits with `micro_ant = "ufl"`).
 * The charger/boost bay has 1.5 mm ribs with open corners for wires. It is
   sized for an Adafruit PowerBoost 1000C (36.3 × 22.9 mm); smaller
   TP4056 + boost boards fit as well.
@@ -208,7 +229,7 @@ To buy:
 | Qty | Part | Notes |
 |-----|------|-------|
 | 1 | GNSS antenna with SMA lead | multiband L1/L2 to suit the F9P, if not already on hand |
-| 1 | U.FL to SMA-female **bulkhead** pigtail, 1.13 mm cable, 100-150 mm | 1/4-36 thread with nut, washer and O-ring; Ø6.5 hole. If your Micro has the edge SMA instead of U.FL, SMA-male to SMA-bulkhead |
+| 1 | **right-angle SMA-male to SMA-female bulkhead** pigtail, RG174 (or RG316), 75-100 mm | for the SMA Micro. Bulkhead end: 1/4-36 thread with nut, washer and O-ring; Ø6.5 hole. The run is ~60 mm; spare cable loops over the charger module. (U.FL Micro: U.FL to SMA bulkhead, 1.13 mm cable, 100-150 mm) |
 | 1 | 18650 holder with wire leads, ~77 x 20.5 x 15 mm | pocket is 78.5 x 21.5 |
 | 1 | 18650 cell, protected | 3000-3500 mAh should run the F9P + HC-05 (~0.7 W) for roughly 12 h |
 | 1 | charger + 5 V boost module | Adafruit PowerBoost 1000C (load-sharing: runs while charging), or a TP4056 + MT3608 / "1S charge-boost 5 V 1 A" board up to 37.5 x 24 mm |
@@ -257,8 +278,9 @@ breakout's README. Plastic does not block 2.4 GHz.
 4. Tape the 18650 holder into its pocket, leads out through the notch at the
    +X end. Tape the charger/boost module into its bay.
 5. Wire per the diagram, then screw the breakout (with Micro and HC-05
-   fitted) to the four standoffs, USB edge toward the SMA end.
-6. Connect the pigtail from the Micro's U.FL to the SMA bulkhead.
+   fitted) to the four standoffs, **antenna/USB edge toward the switch end**.
+6. Screw the pigtail's right-angle plug onto the Micro's SMA, cable leaving
+   toward the battery.
 7. Lay the O-ring cord in the groove, glue the joint, fit the lid, and
    tighten the six screws in a criss-cross pattern until the lid sits on the
    rim.
@@ -310,7 +332,9 @@ Things you are most likely to change:
 | `sw_d`, `sw_body_*` | the switch you bought |
 | `sma_flat` | 5.8 for a D-shaped SMA hole |
 | `standoff_h` | more/less room for the HC-05 under the board |
-| `inner_h` | more/less headroom above the F9P Micro |
+| `micro_ant` | `"sma"` (breakout turned, bulkhead at Z 17) or `"ufl"` |
+| `micro_sma_len` | measured jack + plug length beyond the Micro's edge |
+| `inner_h` | more/less headroom above the F9P Micro and its plug |
 | `usb_mode` | `"none"`, `"direct"`, `"panel"` |
 | `mid_lugs` | `False` for four screws instead of six |
 | `outer_r`, `edge_r` | outside corner radius and edge fillet |

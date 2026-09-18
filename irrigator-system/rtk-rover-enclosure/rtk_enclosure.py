@@ -10,7 +10,8 @@ antenna pigtail.
 Sealing concept (like a commercial IP65 box):
   * a 2.0 mm silicone O-ring cord sits in a groove around the top of the
     base wall and is squeezed 25 % by the flat underside of the lid,
-  * the six lid screws sit in external lugs, outside the seal line,
+  * the six lid screws sit in pillars inside the smooth shell; the gasket
+    passes on the cavity side of them, so they stay outside the seal,
   * every wall opening is a round hole for a gasketed panel component
     (SMA bulkhead, booted toggle switch, capped GX12/DC charging jack).
   * the breakout's own micro-USB has no opening by default (usb_mode="none").
