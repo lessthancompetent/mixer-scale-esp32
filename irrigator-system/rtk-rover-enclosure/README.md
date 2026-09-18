@@ -130,7 +130,7 @@ Plan view (X along the box, +X is the antenna end):
         -X end wall                                        +X end wall
         charge jack, switch                                SMA bulkhead
    +--o------------------------------o------------------------------o--+
-   |  [switch]   [charger/boost bay 37.5x24]   [ breakout PCB 38x32 ]   |  board row
+   |  [switch]   [charger/boost bay 24x16.4 ]   [ breakout PCB 38x32 ]   |  board row
    |  [charge]          [RA plug]=[SMA]=====[ F9P Micro on top    ]  |
    |                        |                  [ HC-05 underneath    ]  |
    |                        +--- coax ------------------------[bulkhead]  (Z = 17)
@@ -150,8 +150,8 @@ Plan view (X along the box, +X is the antenna end):
   end stop with a wire notch. The 16 mm beyond it is where the battery leads
   turn back (and where the bulkhead sits with `micro_ant = "ufl"`).
 * The charger/boost bay has 1.5 mm ribs with open corners for wires. It is
-  sized for an Adafruit PowerBoost 1000C (36.3 × 22.9 mm); smaller
-  TP4056 + boost boards fit as well.
+  sized for the **DD05CVSA** charge + boost board (23 × 15.4 mm, bay 24 × 16.4);
+  for an Adafruit PowerBoost 1000C set `mod_len = 37.5`, `mod_w = 24.0`.
 * The battery leads run along the top of the 3 mm divider rib, under the
   breakout, to the switch end.
 
@@ -372,7 +372,7 @@ To buy:
 | 1 | **right-angle SMA-male to SMA-female bulkhead** pigtail, RG174 (or RG316), 75-100 mm | for the SMA Micro. Bulkhead end: 1/4-36 thread with nut, washer and O-ring; Ø6.5 hole. The run is ~60 mm; spare cable loops over the charger module. (U.FL Micro: U.FL to SMA bulkhead, 1.13 mm cable, 100-150 mm) |
 | 1 | 18650 holder with wire leads, ~77 x 20.5 x 15 mm | pocket is 78.5 x 21.5 |
 | 1 | 18650 cell, protected | 3000-3500 mAh should run the F9P + HC-05 (~0.7 W) for roughly 12 h |
-| 1 | charger + 5 V boost module | AliExpress **DD05CVSA 5 V** (23 x 15.4 x 5.7 mm; 4.5-8 V in, 1 A charge, 5 V 1.2 A out, runs while charging, 0.45 mA standby) is the cheap equivalent of the Adafruit PowerBoost 1000C and fits the 37.5 x 24 bay with room to spare. It has no battery under-voltage cut-off of its own: use a **protected** 18650. Avoid IP5306 "power bank" boards: they need a button press to start and switch off at light load |
+| 1 | charger + 5 V boost module | AliExpress **DD05CVSA 5 V** (23 x 15.4 x 5.7 mm; 4.5-8 V in, 1 A charge, 5 V 1.2 A out, runs while charging, 0.45 mA standby) is the cheap equivalent of the Adafruit PowerBoost 1000C and is what the bay is sized for. It has no battery under-voltage cut-off of its own: use a **protected** 18650. Avoid IP5306 "power bank" boards: they need a button press to start and switch off at light load |
 | 1 | JST-PH 2-pin lead | only for the PowerBoost's battery socket |
 | 1 | mini toggle switch MTS-102 (SPDT, 6 mm bush) + silicone boot | Ø6.2 hole; or set `sw_d = 12.2` for a 12 mm IP67 latching push button |
 | 1 | GX12 2-pin panel socket + line plug + dust cap, or IP67 5.5 x 2.1 DC jack | Ø12.2 hole, 5 V charge input |

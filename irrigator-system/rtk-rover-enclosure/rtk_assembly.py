@@ -138,19 +138,18 @@ def make_mockups(P, L):
     M["batt_spring"] = (cone_x(hx0 + 2.0, cx0, cy, cz, 5.0, 9.0), "metal")
     M["batt_contact"] = (rbox(cx0 + cell_len, cy - 4, cz - 4, hx1 - 2.0, cy + 4, cz + 4), "metal")
 
-    # ---- charger / boost module (Adafruit PowerBoost 1000C proportions) -----------
+    # ---- charger / boost module (DD05CVSA: bare board with solder pads at both ends) -----------
     mx0, my0, mx1, my1 = L["mod"]
     mcx, mcy = 0.5 * (mx0 + mx1), 0.5 * (my0 + my1)
     zp = 1.0                                     # foam tape
-    px0, py0, px1, py1 = mcx - 18.15, mcy - 11.45, mcx + 18.15, mcy + 11.45
-    M["boost_tape"] = (rbox(px0 + 3, py0 + 3, 0, px1 - 3, py1 - 3, zp), "plastic_white")
-    M["boost_pcb"] = (rbox(px0, py0, zp, px1, py1, zp + 1.6, 2.0), "pcb_blue")
-    zq = zp + 1.6
-    M["boost_jst"] = (rbox(px0, py0 + 2.0, zq, px0 + 5.8, py0 + 9.9, zq + 4.2), "plastic_white")
-    M["boost_usb"] = (rbox(px0, py1 - 10.0, zq, px0 + 5.6, py1 - 2.5, zq + 2.6), "metal")
-    M["boost_inductor"] = (rbox(mcx + 2, mcy - 3, zq, mcx + 8, mcy + 3, zq + 3.0, 0.8), "steel_dark")
-    M["boost_ics"] = (rbox(mcx - 8, mcy - 2, zq, mcx - 4, mcy + 2, zq + 1.0)
-                      .union(rbox(mcx - 9, mcy + 5, zq, mcx - 4, mcy + 9, zq + 1.0)), "plastic_black")
+    pl, pw = P["mod_pcb"]
+    px0, py0, px1, py1 = mcx - pl / 2, mcy - pw / 2, mcx + pl / 2, mcy + pw / 2
+    M["boost_tape"] = (rbox(px0 + 2, py0 + 2, 0, px1 - 2, py1 - 2, zp), "plastic_white")
+    M["boost_pcb"] = (rbox(px0, py0, zp, px1, py1, zp + 1.2, 1.0), "pcb_blue")
+    zq = zp + 1.2
+    M["boost_inductor"] = (rbox(mcx + 1.5, mcy - 2.5, zq, mcx + 6.5, mcy + 2.5, zq + 3.0, 0.8), "steel_dark")
+    M["boost_ics"] = (rbox(mcx - 5.5, mcy - 4.5, zq, mcx - 1.5, mcy - 1.0, zq + 1.0)
+                      .union(rbox(mcx - 5.5, mcy + 0.5, zq, mcx - 2.5, mcy + 3.5, zq + 1.0)), "plastic_black")
 
     # ---- SMA bulkhead (+X wall) with U.FL pigtail ------------------------------------
     w, L_in = P["wall"], L["L_in"]
@@ -233,26 +232,25 @@ def make_mockups(P, L):
     # ---- power wiring (see the README wiring diagram) ---------------------------------------------
     dm = 0.5 * (L["div"][0] + L["div"][1])        # wires run on top of the divider rib, under the PCB
     xl = 16.5                                     # lane between the jack/switch bodies and the module
-    jst_x = px0                                   # wires enter the JST square-on, stacked clear of the lane wires
+    pad_x = px0 + 1.5                             # pad row at the -X end of the board: B-, B+, IN-, IN+ across it
     t_x = 13.3                                    # switch terminal tips
     M["wire_batt_pos_to_switch"] = (wire([
         (hx1, cy + 2, 1.0), (bx1 + 4.5, cy + 2, 1.0), (bx1 + 4.5, dm, 3.8), (xl, dm, 3.8),
         (xl, wy, 3.8), (xl, wy, wz), (t_x, wy, wz)]), "wire_red")
     M["wire_batt_neg_to_module"] = (wire([
         (hx1, cy - 2, 1.0), (bx1 + 6.5, cy - 2, 1.0), (bx1 + 6.5, dm, 5.5), (xl - 0.4, dm, 5.5),
-        (xl - 0.4, py0 + 3.0, 5.5), (jst_x, py0 + 3.0, 5.5)]), "wire_black")
+        (xl - 0.4, py0 + 1.5, 5.5), (pad_x, py0 + 1.5, 5.5), (pad_x, py0 + 1.5, zq)]), "wire_black")
     M["wire_switch_to_module"] = (wire([
-        (t_x, wy - 4.7, wz), (xl - 1.3, wy - 4.7, wz), (xl - 1.3, py0 + 8.0, 6.0),
-        (jst_x, py0 + 8.0, 6.0)]), "wire_red")
-    pad_y = py1 - 8.0
-    for n, c, dy, dx in (("pos", "wire_red", 2.0, 8.0), ("neg", "wire_black", -2.0, 10.5)):
+        (t_x, wy - 4.7, wz), (xl - 1.3, wy - 4.7, wz), (xl - 1.3, py0 + 5.0, 7.5),
+        (pad_x, py0 + 5.0, 7.5), (pad_x, py0 + 5.0, zq)]), "wire_red")
+    for n, c, dy, stub, dx in (("pos", "wire_red", 2.0, 17.5, 2.5), ("neg", "wire_black", -2.0, 19.5, 5.5)):
         M[f"wire_charge_{n}"] = (wire([
-            (16.0, gy_ + dy, gz), (17.5, gy_ + dy, gz), (19.5, gy_ + dy, gz + 1.5), (px0 + dx, pad_y, 9.0), (px0 + dx, pad_y, zq)]), c)
+            (16.0, gy_ + dy, gz), (stub, gy_ + dy, gz), (pad_x + dx, py1 - 1.5, 10.0), (pad_x + dx, py1 - 1.5, zq)]), c)
     bk_x = L["pcb_box"][0] + 1.2                  # VUSB / GND pads: position on the breakout est.
     for n, c, s_ in (("5v", "wire_red", 1.0), ("gnd", "wire_black", -1.0)):
         by_ = L["row_c"] + s_ * 9.2               # outside the HC-05 carrier, inside the standoffs
         M[f"wire_out_{n}"] = (wire([
-            (px1 - 2.0, mcy + s_ * 2.0, zq), (px1 - 2.0, mcy + s_ * 2.0, 4.5), (bk_x, by_, 4.5), (bk_x, by_, zb)]), c)
+            (px1 - 1.5, mcy + s_ * 3.0, zq), (px1 - 1.5, mcy + s_ * 3.0, 4.5), (bk_x, by_, 4.5), (bk_x, by_, zb)]), c)
 
     # ---- pipe clamp on the back face -------------------------------------------------------------------
     if P["fix_holes"]:

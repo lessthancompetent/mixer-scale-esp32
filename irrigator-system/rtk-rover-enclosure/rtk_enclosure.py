@@ -173,8 +173,10 @@ P = dict(
     sma_bay_len=16.0,    # free length at the +X end of the battery row for the SMA jack
 
     # ---- charger / boost module bay ------------------------------------------
-    # default fits Adafruit PowerBoost 1000C (36.3 x 22.9); TP4056+boost boards fit too
-    mod_len=37.5, mod_w=24.0, mod_h=7.0,
+    # DD05CVSA 5 V charge + boost board: 23 x 15.4 x 5.7 mm, plus 1 mm clearance and foam tape under it.
+    # (Adafruit PowerBoost 1000C instead: mod_len=37.5, mod_w=24.0, mod_h=7.0)
+    mod_len=24.0, mod_w=16.4, mod_h=7.0,
+    mod_pcb=(23.0, 15.4),   # the board itself, for the mock-up
     mod_rib_h=1.5, mod_rib_t=1.2,
     mod_y_shift=1.5,     # module bay centre relative to the board-row centre (wire lane by the divider)
 
