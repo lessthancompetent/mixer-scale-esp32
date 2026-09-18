@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""
+Mocked-up internals and a coloured STEP assembly for the RTK rover enclosure.
+
+rtk_enclosure.py checks the printed parts against plain keep-out boxes. This
+script puts recognisable dummy components in the same places (breakout with
+its sockets and micro-USB, simpleRTK2B Micro with the ZED-F9P can and U.FL,
+HC-05 on its carrier, 18650 cell in a holder, PowerBoost-style module, SMA
+bulkhead with pigtail, booted toggle switch, capped GX12 socket, lid gasket
+and screws), checks them against the printed parts and against each other,
+and writes
+
+    out/rtk_rover_assembly.step     coloured, one named part per component
+
+The mock-ups are visual/fit aids built from datasheet-ish dimensions, not
+vendor CAD. Anything marked "est." below is a guess to be replaced with a
+calliper measurement.
+
+Run:   python3 rtk_assembly.py
+Then:  render_freecad.py (inside FreeCAD) turns the STEP into shaded PNGs.
+"""
+import math
+import os
+import sys
+
+import cadquery as cq
+
+from rtk_enclosure import GERBER, P, cyl, cyl_x, cyl_z, layout, make_base, make_lid, rbox, vol
+
+COLORS = {
+    "base": (0.85, 0.47, 0.10), "lid": (0.90, 0.55, 0.15),
+    "gasket": (0.75, 0.10, 0.10),
+    "pcb_green": (0.05, 0.35, 0.15), "pcb_blue": (0.08, 0.20, 0.55), "pcb_black": (0.08, 0.08, 0.10),
+    "plastic_black": (0.10, 0.10, 0.10), "plastic_white": (0.92, 0.92, 0.88),
+    "metal": (0.75, 0.76, 0.78), "gold": (0.83, 0.66, 0.22), "steel_dark": (0.30, 0.31, 0.33),
+    "cell": (0.10, 0.50, 0.55), "rubber": (0.15, 0.15, 0.17), "coax": (0.25, 0.25, 0.25),
+    "led_green": (0.10, 0.90, 0.20), "led_red": (0.95, 0.10, 0.10),
+}
+
+
+def hex_x(x0, x1, y, z, af):
+    """Hex prism along X, across-flats af, flats facing +-Z."""
+    return cq.Workplane("YZ", origin=(x0, y, z)).polygon(6, af / math.cos(math.pi / 6)).extrude(x1 - x0)
+
+
+def cone_x(x0, x1, y, z, d0, d1):
+    return cq.Workplane("XY").add(cq.Solid.makeCone(d0 / 2, d1 / 2, abs(x1 - x0), cq.Vector(x0, y, z),
+                                                    cq.Vector(1 if x1 > x0 else -1, 0, 0)))
+
+
+def make_mockups(P, L):
+    """Return {part name: (shape, colour key)}. Same frame as the enclosure."""
+    g = GERBER
+    M = {}
+    zb = P["standoff_h"]
+    zt = zb + P["pcb_t"]
+
+    def gbox(gx0, gx1, gy0, gy1, z0, z1, r=0.0):
+        """Box given in gerber x/y (board frame), enclosure Z."""
+        return rbox(L["bx0"] + gy0, L["by0"] - gx1, z0, L["bx0"] + gy1, L["by0"] - gx0, z1, r)
+
+    # ---- breakout board ------------------------------------------------------
+    x0, y0, x1, y1 = L["pcb_box"]
+    pcb = rbox(x0, y0, zb, x1, y1, zt, P["pcb_corner_r"])
+    for (hx, hy) in L["holes"]:
+        pcb = pcb.cut(cyl_z(hx, hy, zb - 1, zt + 1, P["hole_d"]))
+    M["breakout_pcb"] = (pcb, "pcb_green")
+
+    sock_h, sock_y = 4.3, (4.5, 24.5)          # 1x10 2 mm sockets; position along the row est.
+    socks = None
+    for rx in g["micro_rows"]:
+        s = gbox(rx - 1.0, rx + 1.0, sock_y[0], sock_y[1], zt, zt + sock_h)
+        socks = s if socks is None else socks.union(s)
+    M["breakout_sockets"] = (socks, "plastic_black")
+
+    ux, uy = g["usb"]
+    M["breakout_usb"] = (gbox(ux - 3.75, ux + 3.75, g["usb_face_y"] - 5.6, g["usb_face_y"], zt, zt + 2.6), "metal")
+    for (lx, ly), c, n in zip(L["leds"], ("led_green", "led_red"), ("pwr", "rtk")):
+        M[f"breakout_led_{n}"] = (rbox(lx - 0.8, ly - 0.4, zt, lx + 0.8, ly + 0.4, zt + 0.6), c)
+
+    # ---- simpleRTK2B Micro on the sockets --------------------------------------
+    rc = 0.5 * (g["micro_rows"][0] + g["micro_rows"][1])
+    zm = zt + sock_h + 1.5                       # 1.5 = pin header plastic
+    pins = None
+    for rx in g["micro_rows"]:
+        s = gbox(rx - 1.0, rx + 1.0, sock_y[0], sock_y[1], zt + sock_h, zm)
+        pins = s if pins is None else pins.union(s)
+    M["micro_headers"] = (pins, "plastic_black")
+    M["micro_pcb"] = (gbox(rc - 11.75, rc + 11.75, -0.5, 29.5, zm, zm + 1.0, 1.0), "pcb_black")
+    M["micro_zed_f9p"] = (gbox(rc - 8.5, rc + 8.5, 3.5, 25.5, zm + 1.0, zm + 3.4), "metal")
+    ufl_gy = 27.5
+    M["micro_ufl"] = (gbox(rc - 1.3, rc + 1.3, ufl_gy - 1.3, ufl_gy + 1.3, zm + 1.0, zm + 2.25), "gold")
+
+    # ---- HC-05 on a ZS-040 carrier under the breakout ---------------------------
+    hc = 0.5 * (g["x_min"] + g["x_max"])
+    hy0 = g["hc05_y"][0] + 0.25
+    zc = zb - 2.5                                # 2.5 = header plastic
+    M["hc05_header"] = (gbox(hc - 7.6, hc + 7.6, hy0 + 0.5, hy0 + 3.0, zc, zb), "plastic_black")
+    M["hc05_carrier"] = (gbox(hc - 7.75, hc + 7.75, hy0, hy0 + 37.0, zc - 1.2, zc), "pcb_blue")
+    M["hc05_module"] = (gbox(hc - 6.5, hc + 6.5, hy0 + 9.0, hy0 + 36.0, zc - 1.2 - 0.8, zc - 1.2), "pcb_blue")
+    M["hc05_shield"] = (gbox(hc - 5.5, hc + 5.5, hy0 + 10.0, hy0 + 28.0, zc - 1.2 - 0.8 - 2.2, zc - 1.2 - 0.8), "metal")
+
+    # ---- 18650 holder and cell ----------------------------------------------------
+    bx0, by0, bx1, by1 = L["batt"]
+    hx0, hx1, hy_0, hy_1 = bx0 + 0.5, bx1 - 0.5, by0 + 0.5, by1 - 0.5
+    cy = 0.5 * (hy_0 + hy_1)
+    cell_d, cell_len, tray_f = 18.4, 65.0, 1.5
+    cz = tray_f + cell_d / 2 + 0.2
+    holder = rbox(hx0, hy_0, 0, hx1, hy_1, P["batt_h"], 1.0)
+    holder = holder.cut(cyl_x(hx0 + 2.0, hx1 - 2.0, cy, cz, cell_d + 0.6))
+    holder = holder.cut(rbox(hx0 + 2.0, cy - (cell_d + 0.6) / 2, cz, hx1 - 2.0, cy + (cell_d + 0.6) / 2, P["batt_h"] + 1))
+    M["batt_holder"] = (holder, "plastic_black")
+    cx0 = hx0 + 2.0 + 5.0                        # spring end at -X
+    cell = cyl_x(cx0, cx0 + cell_len - 1.0, cy, cz, cell_d).union(cyl_x(cx0 + cell_len - 1.0, cx0 + cell_len, cy, cz, 6.0))
+    M["batt_cell_18650"] = (cell, "cell")
+    M["batt_spring"] = (cone_x(hx0 + 2.0, cx0, cy, cz, 5.0, 9.0), "metal")
+    M["batt_contact"] = (rbox(cx0 + cell_len, cy - 4, cz - 4, hx1 - 2.0, cy + 4, cz + 4), "metal")
+
+    # ---- charger / boost module (Adafruit PowerBoost 1000C proportions) -----------
+    mx0, my0, mx1, my1 = L["mod"]
+    mcx, mcy = 0.5 * (mx0 + mx1), 0.5 * (my0 + my1)
+    zp = 1.0                                     # foam tape
+    px0, py0, px1, py1 = mcx - 18.15, mcy - 11.45, mcx + 18.15, mcy + 11.45
+    M["boost_tape"] = (rbox(px0 + 3, py0 + 3, 0, px1 - 3, py1 - 3, zp), "plastic_white")
+    M["boost_pcb"] = (rbox(px0, py0, zp, px1, py1, zp + 1.6, 2.0), "pcb_blue")
+    zq = zp + 1.6
+    M["boost_jst"] = (rbox(px0, py0 + 2.0, zq, px0 + 5.8, py0 + 9.9, zq + 4.2), "plastic_white")
+    M["boost_usb"] = (rbox(px0, py1 - 10.0, zq, px0 + 5.6, py1 - 2.5, zq + 2.6), "metal")
+    M["boost_inductor"] = (rbox(mcx + 2, mcy - 3, zq, mcx + 8, mcy + 3, zq + 3.0, 0.8), "steel_dark")
+    M["boost_ics"] = (rbox(mcx - 8, mcy - 2, zq, mcx - 4, mcy + 2, zq + 1.0)
+                      .union(rbox(mcx - 9, mcy + 5, zq, mcx - 4, mcy + 9, zq + 1.0)), "plastic_black")
+
+    # ---- SMA bulkhead (+X wall) with U.FL pigtail ------------------------------------
+    w, L_in = P["wall"], L["L_in"]
+    sy, sz = L["sma_y"], P["sma_z"]
+    sma_in = 8.0                                 # flange + crimp inside the wall (keep-out allows 15)
+    sma = cyl_x(L_in - 2.0, L_in, sy, sz, 9.0)                          # inner flange
+    sma = sma.union(cyl_x(L_in - sma_in, L_in - 2.0, sy, sz, 4.5))      # crimp ferrule
+    sma = sma.union(cyl_x(L_in, L_in + w + 8.0, sy, sz, 6.35))          # 1/4-36 thread
+    sma = sma.cut(cyl_x(L_in + w + 3.0, L_in + w + 9.0, sy, sz, 4.2))   # socket bore
+    M["sma_bulkhead"] = (sma, "gold")
+    M["sma_washer"] = (cyl_x(L_in + w, L_in + w + 0.8, sy, sz, 9.5).cut(cyl_x(L_in + w - 1, L_in + w + 2, sy, sz, 6.4)), "metal")
+    M["sma_nut"] = (hex_x(L_in + w + 0.8, L_in + w + 3.0, sy, sz, 8.0).cut(cyl_x(L_in + w, L_in + w + 4, sy, sz, 6.4)), "gold")
+
+    ufl_x, ufl_y = L["bx0"] + ufl_gy, L["by0"] - rc
+    plug_z = zm + 2.25
+    M["pigtail_ufl_plug"] = (rbox(ufl_x - 1.6, ufl_y - 2.6, plug_z, ufl_x + 1.6, ufl_y + 1.6, plug_z + 1.2, 0.5), "gold")
+    cz_cable = plug_z + 0.6
+    pts = [(ufl_x, ufl_y - 2.6, cz_cable), (ufl_x, ufl_y - 10.0, cz_cable),
+           (ufl_x - 3.0, sy + 11.0, cz_cable - 1.0), (L_in - sma_in - 8.0, sy + 4.0, sz + 5.0),
+           (L_in - sma_in - 4.5, sy + 0.4, sz + 1.0), (L_in - sma_in, sy, sz)]
+    path = cq.Workplane("XY").spline(pts, tangents=[(0, -1, 0), (1, 0, 0)], includeCurrent=False)
+    cable = cq.Workplane("XZ", origin=pts[0]).circle(1.13 / 2).sweep(path)
+    M["pigtail_coax"] = (cable, "coax")
+
+    # ---- toggle switch with silicone boot (-X wall) -------------------------------------
+    wy, wz = L["sw_y"], P["sw_z"]
+    M["switch_body"] = (rbox(0, wy - 6.6, wz - 3.95, 9.3, wy + 6.6, wz + 3.95), "pcb_blue")
+    M["switch_bushing"] = (cyl_x(-w - 4.0, 0, wy, wz, 6.0), "metal")
+    term = None
+    for dy in (-4.7, 0.0, 4.7):
+        t = rbox(9.3, wy + dy - 1.0, wz - 0.4, 13.3, wy + dy + 1.0, wz + 0.4)
+        term = t if term is None else term.union(t)
+    M["switch_terminals"] = (term, "metal")
+    boot = cyl_x(-w - 4.0, -w, wy, wz, 11.0).union(cone_x(-w - 4.0, -w - 17.0, wy, wz, 9.0, 4.5))
+    M["switch_boot"] = (boot.cut(cyl_x(-w - 4.0, -w + 1, wy, wz, 6.0)), "rubber")
+
+    # ---- GX12 charge socket with cap (-X wall) ---------------------------------------------
+    gy_, gz = L["charge_y"], P["charge_z"]
+    gx12 = cyl_x(-w - 2.0, -w, gy_, gz, 15.0)                               # front flange
+    gx12 = gx12.union(cyl_x(-w - 9.0, 2.5, gy_, gz, 12.0))                  # threaded barrel
+    gx12 = gx12.union(cyl_x(2.5, 13.0, gy_, gz, 10.5))                      # rear body
+    M["gx12_socket"] = (gx12, "metal")
+    M["gx12_nut"] = (hex_x(0, 2.5, gy_, gz, 14.0).cut(cyl_x(-1, 3.5, gy_, gz, 12.0)), "steel_dark")
+    M["gx12_pins"] = (cyl_x(13.0, 16.0, gy_ - 2.0, gz, 1.0).union(cyl_x(13.0, 16.0, gy_ + 2.0, gz, 1.0)), "gold")
+    M["gx12_cap"] = (cyl_x(-w - 11.0, -w - 2.0, gy_, gz, 14.5).cut(cyl_x(-w - 9.0, -w - 1.0, gy_, gz, 12.0)), "steel_dark")
+
+    # ---- lid gasket (compressed cord) and screws ------------------------------------------------
+    go, H = P["groove_offset"], L["H_in"]
+    hw = P["cord_d"] / 2
+    ring = rbox(-(go + hw), -(go + hw), H - P["groove_depth"], L_in + go + hw, L["W_in"] + go + hw, H, P["corner_r"] + go + hw)
+    ring = ring.cut(rbox(-(go - hw), -(go - hw), H - P["groove_depth"] - 1, L_in + go - hw, L["W_in"] + go - hw, H + 1,
+                         P["corner_r"] + go - hw))
+    M["gasket_cord"] = (ring, "gasket")
+
+    zs = H + P["lid_t"] - P["lid_cbore_depth"]
+    for i, (lx, ly) in enumerate(L["lugs"]):
+        s = cyl_z(lx, ly, zs, zs + 1.65, 5.7).union(cyl_z(lx, ly, zs - 10.0, zs, 3.0))
+        M[f"lid_screw_{i + 1}"] = (s.cut(cq.Workplane("XY", origin=(lx, ly, zs + 0.65)).polygon(6, 2.3).extrude(2)), "steel_dark")
+    for i, (hx, hy) in enumerate(L["holes"]):
+        s = cyl_z(hx, hy, zt, zt + 2.0, 5.6).union(cyl_z(hx, hy, zt - 6.0, zt, 3.0))
+        M[f"board_screw_{i + 1}"] = (s, "steel_dark")
+    return M
+
+
+# Parts that are meant to bite into the print (thread-forming screws).
+FASTENERS = ("lid_screw_", "board_screw_")
+
+
+def check(P, L, base, lid, M):
+    print("\n=== Mock-up check (volume intersecting the printed parts, mm^3) ===")
+    ok = True
+    names = [n for n in M if not n.startswith(FASTENERS)]
+    for n in names:
+        vb, vl = vol(base.intersect(M[n][0])), vol(lid.intersect(M[n][0]))
+        bb = M[n][0].val().BoundingBox()
+        flag = "ok " if (vb + vl) < 0.01 else "CLASH"
+        ok &= flag == "ok "
+        print(f"  {flag}  {n:20s} base {vb:7.2f}  lid {vl:7.2f}   Z {bb.zmin:5.1f}..{bb.zmax:5.1f}")
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            v = vol(M[a][0].intersect(M[b][0]))
+            if v > 0.01:
+                ok = False
+                print(f"  CLASH  {a} <-> {b}: {v:.2f}")
+    top = max(M[n][0].val().BoundingBox().zmax for n in names if n != "gasket_cord")
+    print(f"  tallest internal part reaches Z = {top:.1f}; lid underside is at Z = {L['H_in']:.1f}, "
+          f"lip comes down to Z = {L['H_in'] - P['lip_h']:.1f} around the rim")
+    print("  mock-ups: " + ("no clashes" if ok else "see above"))
+    return ok
+
+
+def build_assembly(base, lid, M):
+    def col(k):
+        return cq.Color(*COLORS[k], 1.0)
+    assy = cq.Assembly(name="rtk_rover")
+    assy.add(base, name="enclosure_base", color=col("base"))
+    assy.add(lid, name="enclosure_lid", color=col("lid"))
+    for n, (shape, c) in M.items():
+        assy.add(shape, name=n, color=col(c))
+    return assy
+
+
+def main():
+    L = layout(P)
+    base, lid = make_base(P, L), make_lid(P, L)
+    M = make_mockups(P, L)
+    ok = check(P, L, base, lid, M)
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), P["out_dir"])
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, "rtk_rover_assembly.step")
+    build_assembly(base, lid, M).export(path)
+    print(f"\nwrote {path}  ({len(M) + 2} parts)")
+    if not ok:
+        print("WARNING: clashes reported above")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -24,6 +24,44 @@ files and the drawings live in `out/`.
 | `out/side_section.png` | long section through battery bay, SMA jack and lid |
 | `out/lid_plate.png`, `out/lid_lip.png` | lid: screw holes, LED windows, locating lip |
 
+## Assembly model and renders
+
+![lid off, SMA end](out/render_open_sma_end.png)
+
+`rtk_assembly.py` places mocked-up internals in the box and writes a coloured
+STEP assembly with one named part per component; `render_freecad.py` turns that
+into shaded PNGs inside FreeCAD.
+
+| File | What |
+|------|------|
+| `out/rtk_rover_assembly.step` | base, lid, gasket, screws and all mock components, coloured and named. In FreeCAD open it through the GUI (File > Open, or `ImportGui.insert`); the non-GUI `Import.insert` drops the colours |
+| `out/render_open_sma_end.png`, `out/render_open_switch_end.png`, `out/render_open_top.png` | lid off |
+| `out/render_closed_sma_end.png`, `out/render_closed_switch_end.png` | closed box, both ends |
+| `out/render_lid_transparent.png`, `out/render_exploded.png` | see-through lid, lid and screws lifted |
+
+```bash
+python3 rtk_assembly.py        # mock-up clash check + out/rtk_rover_assembly.step
+# then in FreeCAD: Macro > Macros... > execute render_freecad.py
+```
+
+The mock-ups are fit and visual aids built from typical dimensions, not vendor
+CAD: the socket position along the breakout, the Micro and HC-05 outlines and
+the 18650 holder are estimates to replace with calliper measurements. The
+script checks every mock part against the printed parts and against each
+other (thread-forming screws excepted) and exits non-zero on a clash.
+
+What the mock-ups showed beyond the keep-out boxes:
+
+* The 18650 **cell** stands taller than its holder: its top is at Z ≈ 20.1 mm,
+  1.9 mm under the lid, while the `batt_h = 15` keep-out only covers the
+  holder. It clears the lid and the locating lip, but do not reduce `inner_h`
+  below about 21 mm.
+* The tallest part is the U.FL plug and pigtail on the Micro at Z ≈ 20.9 mm
+  (lid underside 22.0 mm).
+* The pigtail has only ~8 mm between the back of the SMA crimp and the end of
+  the battery holder, so it has to rise over the holder end as modelled. Use
+  1.13 mm cable rather than RG178, and keep `sma_bay_len` at 16 mm or more.
+
 ## Board data used
 
 Taken from the breakout's published gerbers and pick-and-place file
