@@ -33,19 +33,23 @@ architecture costs ~8 Wh/day; the beacon costs ≤2 Wh/day.
 
 Cycle (deep sleep between cycles):
 
-1. Wake on timer. Power GNSS on (GPIO → module EN or P-FET).
-2. Wait for a valid fix, timeout 60 s. Hot start is normally 1–2 s.
+1. Wake on timer. Power GNSS on if it is off (GPIO → module EN or P-FET).
+2. Wait for a fresh valid fix, timeout 60 s.
 3. Transmit the existing 12-byte `MSG_GPS_POSITION` packet
    (src `0x02`; lat, lon ×1e6 int32; speed cm/s int16; battery %; pump_on).
    - `pump_on` is the last state learned from the pump module's reply.
    - Speed is derived from the previous fix held in RTC memory, not Doppler
      (Doppler noise exceeds 0.03 m/s travel speed).
-4. Open a ~300 ms RX window for `MSG_PUMP_STATE` (new, `0x12`, src `0x01`,
-   payload 1 byte: 1 = pumping).
-5. Power GNSS off (main rail only), deep sleep.
-   - Pump on: 30 s interval. Pump off or no reply: 10 min interval.
-   - Three consecutive missed replies while believed pumping → fall back to
-     10 min interval. The next heard reply restores 30 s.
+4. Open a 600 ms RX window for `MSG_PUMP_STATE` (new, `0x12`, src `0x01`,
+   payload 1 byte: 1 = pumping). The pump module replies ~40 ms after
+   receiving, so the beacon is already listening.
+5. Deep sleep.
+   - Pump on: 30 s interval, and the GNSS stays powered through the sleep
+     (pin held) so it tracks continuously — hot-start first fixes are noisier
+     and would degrade the stall check.
+   - Pump off or unknown: 5 min interval, GNSS main rail off between wakes.
+   - Three consecutive missed replies while believed pumping → assume pump
+     off. The next heard reply restores 30 s.
 
 No fix within 60 s: send `MSG_HEARTBEAT` with payload bit 1 = "no fix" so the
 link is still seen alive, then sleep as normal.
@@ -64,22 +68,28 @@ reply count.
   dependencies:
   - Input: `(lat, lon, t_ms)` samples and pump state.
   - Armed only after the pump has been on for `STALL_GRACE_MS` (15 min).
-  - Stalled when the buffer spans ≥ `STALL_WINDOW_MS` (5 min) and the distance
-    between the oldest in-window sample and the newest is
-    < `STALL_THRESH_M` (3 m).
+  - Stalled when the mean of the newest 3 samples is < `STALL_THRESH_M` (3 m)
+    from the mean of 3 samples taken ≥ `STALL_WINDOW_MS` (5 min) earlier, on
+    2 consecutive samples. Averaging is needed: single fixes carry ~1.5 m of
+    noise, which would false-trip a 3 m test a few times per 12 h run.
+  - After a genuine stop the verdict arrives ~3.5 min later (the window still
+    holds travel until then).
+  - Newest sample older than 2 min → no verdict (no silence trip).
   - Buffer is cleared on pump-off, so each pump run starts fresh.
   - Insufficient samples in the window (lost packets) → not stalled.
-- On stall: call the existing `pulseCutoff()` once (existing `cutLatched`
-  behaviour — re-arms on manual restart), and broadcast `MSG_ALERT_STALL`
-  (src `0x01`), repeating every 1 min until the pump is sensed off.
+- On stall: broadcast `MSG_ALERT_STALL`, call the existing `pulseCutoff()`
+  once (existing `cutLatched` behaviour — re-arms on manual restart), then
+  broadcast `MSG_PUMP_CUTOFF`; both from src `0x01` with the irrigator's last
+  position. The Pi already logs these as STALL and KICKOUT. If the pump is
+  still sensed running, `MSG_ALERT_STALL` repeats every 1 min.
 - `MSG_PUMP_CUTOFF` handling from `0x02` is retained so the older modules still
   work.
 
 ## 3. Bridge and Pi server
 
-Packet formats are unchanged. Verify `lora_bridge.ino` passes
-`MSG_ALERT_STALL` through when the source is `0x01`, and add `MSG_PUMP_STATE`
-to its known types so it is not logged as unknown. No database changes.
+No changes. `lora_bridge.ino` forwards alert types from any source and
+silently ignores unknown types such as `MSG_PUMP_STATE`; `receiver.py` already
+maps the two alert types to STALL and KICKOUT. Confirmed in the bench test.
 
 ## 4. Power
 
@@ -89,7 +99,8 @@ Panel 10 W 6 V → CN3791 MPPT charger module (set for 1-cell Li-ion, 6 V panel)
 Thermistor charge cutoff: NTC on the pack gating the CN3791 so charging stops
 below ~0 °C and above ~45 °C.
 
-Budget, worst case pumping 24 h/day: ~15–25 mA average ≈ 2 Wh/day. Pump off:
+Budget, worst case pumping 24 h/day: GNSS tracking continuously, ~25 mA
+average ≈ 2.2 Wh/day. Pump off:
 well under 1 mA average. Flat panel, NZ winter, shroud and dried-effluent
 losses all applied: ~3–4 Wh/day. Two cells (~25 Wh) give >10 days with no sun.
 
