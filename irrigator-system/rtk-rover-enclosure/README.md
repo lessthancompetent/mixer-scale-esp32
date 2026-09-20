@@ -204,7 +204,7 @@ weather seal on that end.
 ![back face with clamp](out/render_back_pipe_clamp.png)
 
 Two printed parts. The **saddle** screws to the back of the box with four
-M3 x 10 thread-forming screws into the blind holes; four M4 nuts drop into
+M3 x 8 thread-forming screws into the blind holes (not longer: the holes are 7.2 mm deep and stop 1.2 mm short of the sealed cavity); four M4 nuts drop into
 hex pockets on its box side first, so they are trapped once it is screwed on.
 The **cap** goes round the pipe and four M4 x 20 bolts pull it up to the saddle.
 There is a 2 mm gap between the two halves so the bolts clamp the pipe rather
@@ -382,7 +382,7 @@ To buy:
 | ~0.4 m | Ø2.0 mm silicone O-ring cord + cyanoacrylate | lid gasket, 356 mm cut length |
 | 6 | M3 x 10 button-head screws | lid; thread-forming into Ø2.5 holes (or Ø4.0 holes + M3 heat-set inserts: `lug_hole = 4.0`) |
 | 4 | M3 x 6 pan-head screws | breakout to standoffs |
-| 4 | M3 x 10 pan-head screws | clamp saddle to the back of the box |
+| 4 | M3 x 8 pan-head screws, head Ø6.0 max | clamp saddle to the back of the box. **Not M3 x 10**: the blind holes are 7.2 mm deep and a 10 mm screw can jack through the floor |
 | 4 | M4 x 20 bolts + 4 M4 nuts (+ washers) | pipe clamp; stainless for outdoors |
 | 4 | M4 x 25 bolts + 4 M4 nuts | phone holder clamp |
 | 4 | M3 x 10 countersunk screws | phone cradle to bracket |
